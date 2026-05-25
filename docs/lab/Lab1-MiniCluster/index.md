@@ -1937,61 +1937,132 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     - [Kubernetes: Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
     - [Kubernetes: Services](https://kubernetes.io/docs/concepts/services-networking/service/)
 
-    本 Bonus 要求你搭建一个最小 k3s 集群，并在报告中提交验证结果：
-
-    - 在 `node01` 安装 k3s server。
-    - 至少将一个其他节点加入为 k3s agent。
-    - `kubectl get nodes -o wide` 能看到 Ready 状态的节点。
-    - 创建一个简单的 Deployment，例如 `nginx`。
-    - 能通过 `kubectl get pods -o wide` 看到 Pod 被调度到节点上。
-    - 能通过 Service、端口转发或 NodePort 访问该应用。
+    本 Bonus 要求你搭建一个最小 k3s 集群，并在报告中给出基本的验证结果。具体可参考下面的折叠框。
 
     !!! warning "当心别被 k3s 撑爆了！"
         
 
     ??? success "步骤参考和说明"
 
-        在 `node01` 安装 k3s server：
+        === "虚拟机 / 物理机"
 
-        ```bash
-        curl -sfL https://get.k3s.io | sh -
-        sudo kubectl get nodes -o wide
-        ```
+            在 `node01` 安装 k3s server：
 
-        查看用于加入 agent 的 token：
+            ```bash
+            curl -sfL https://get.k3s.io | sh -
+            sudo kubectl get nodes -o wide
+            ```
 
-        ```bash
-        sudo cat /var/lib/rancher/k3s/server/node-token
-        ```
+            查看用于加入 agent 的 token：
 
-        在 `node02` 上安装 k3s agent。请将 `K3S_URL` 和 `K3S_TOKEN` 替换成你的实际地址和 token：
+            ```bash
+            sudo cat /var/lib/rancher/k3s/server/node-token
+            ```
 
-        ```bash
-        curl -sfL https://get.k3s.io | K3S_URL=https://node01:6443 K3S_TOKEN=token sh -
-        ```
+            在 `node02` 上安装 k3s agent。请将 `K3S_URL` 和 `K3S_TOKEN` 替换成你的实际地址和 token：
 
-        回到 `node01` 检查节点：
+            ```bash
+            curl -sfL https://get.k3s.io | K3S_URL=https://node01:6443 K3S_TOKEN=token sh -
+            ```
 
-        ```bash
-        sudo kubectl get nodes -o wide
-        ```
+            回到 `node01` 检查节点：
 
-        部署一个简单应用：
+            ```bash
+            sudo kubectl get nodes -o wide
+            ```
 
-        ```bash
-        sudo kubectl create deployment hello-nginx --image=nginx
-        sudo kubectl expose deployment hello-nginx --type=NodePort --port=80
-        sudo kubectl get pods -o wide
-        sudo kubectl get service hello-nginx
-        ```
+            部署一个简单应用：
 
-        记录 Service 的 NodePort，并尝试访问：
+            ```bash
+            sudo kubectl create deployment hello-nginx --image=nginx
+            sudo kubectl expose deployment hello-nginx --type=NodePort --port=80
+            sudo kubectl get pods -o wide
+            sudo kubectl get service hello-nginx
+            ```
 
-        ```bash
-        curl http://node01:NODE_PORT
-        ```
+            记录 Service 的 NodePort，并尝试访问：
 
-        如果你的虚拟机或云服务器启用了防火墙，请确认 k3s 所需端口没有被阻断。
+            ```bash
+            curl http://node01:NODE_PORT
+            ```
+
+            如果你的虚拟机或云服务器启用了防火墙，请确认 k3s 所需端口没有被阻断。
+
+        === "Docker"
+
+            如果你本来就是按 Docker 路线完成 Lab1，那么可以直接在现有的 `build/lab1-docker/` 四节点环境上加装 k3s，而不需要再单独新建一套 k3s 容器。
+
+            物理机 Docker 环境需要 2 GB 以上空闲内存。macOS 和 Windows 上确保 Docker Desktop 有足够的资源分配（建议 4 GB 以上）。
+
+            **使用方法**（在宿主机上执行）：
+
+            ```bash
+            cd HPC101/build/lab1-docker
+            bash k3s-setup.sh
+            ```
+
+            该脚本会自动完成：检查现有 4 个容器 → 校验容器是否启用了 `privileged: true` 和 `cgroup: host` → 在 `node01` 启动 k3s server → 将 `node02`~`node04` 加入为 agent → 验证节点状态 → 部署 `hello-nginx` 示例应用。
+
+            如果要手动操作，可以拆开执行：
+
+            ```bash
+                # 1. 如需重建基础环境，先启动 lab1-docker 四节点集群
+                docker compose -f build/lab1-docker/compose.yml up -d --build
+
+                # 2. 在现有容器内安装并启动 k3s
+                bash build/lab1-docker/k3s-setup.sh
+
+                # 3. 验证集群
+                docker exec hpc101-node01 /usr/local/bin/k3s kubectl get nodes -o wide
+
+                # 4. 查看 Pod / Service
+                docker exec hpc101-node01 /usr/local/bin/k3s kubectl get pods -o wide
+                docker exec hpc101-node01 /usr/local/bin/k3s kubectl get service hello-nginx
+            ```
+
+            **进入容器**：
+
+            ```bash
+                docker exec -it hpc101-node01 bash
+                docker exec -it hpc101-node02 bash
+                docker exec -it hpc101-node03 bash
+                docker exec -it hpc101-node04 bash
+            ```
+
+            **资源文件说明**：
+
+            | 文件 | 作用 |
+            |---|---|
+            | `build/lab1-docker/compose.yml` | 4 节点基础实验环境；k3s 额外要求 `privileged: true` 与 `cgroup: host` |
+            | `build/lab1-docker/k3s-setup.sh` | 在现有 `node01`~`node04` 上安装 k3s、拉起 server/agent、验证集群并部署 nginx |
+            | `build/lab1-docker/Dockerfile` | Lab1 基础镜像，包含 OpenMPI / BLAS / CBLAS / HPL，以及 SSH / NFS / Slurm 运行环境 |
+
+            **Docker 路线注意事项**：
+
+            - 容器必须同时使用 `privileged: true` 和 `cgroup: host`。前者保证 k3s 能创建 iptables 规则、运行 containerd，后者解决 cgroup v2 下 Pod sandbox 无法创建的问题。
+            - k3s 不在系统层级注册 systemd 单元，而是直接在容器中前台运行 `k3s server` / `k3s agent`。
+            - 使用固定 token `hpc101-k3s-secret`，避免 token 分发问题。
+            - 该方案使用 `--snapshotter native`，并额外传递 `cgroups-per-qos=false` 等 kubelet 参数，以适配 Docker Desktop / 容器内运行 k3s 的场景。
+            - k3s 安装不依赖 `get.k3s.io`，而是直接在容器中下载 k3s 二进制并启动，下载失败时脚本会自动重试。
+            - 容器内建议使用 `/usr/local/bin/k3s kubectl`，或者在宿主机上配合 `docker exec` 执行命令。
+            - 验证时既可以走 ClusterIP，也可以直接通过 Docker 子网中的 NodePort 访问。例如本次参考实现中，`hello-nginx` 可通过 `curl http://172.28.0.12:NODEPORT` 验证；如果你环境不同，也可以使用 ClusterIP 或 `kubectl port-forward`：
+
+                ```bash
+                # 在 node01 容器内部通过 ClusterIP 访问
+                docker exec hpc101-node01 /usr/local/bin/k3s kubectl get svc hello-nginx
+                # → 记录 CLUSTER-IP，然后：
+                docker exec hpc101-node01 curl -s http://CLUSTER-IP
+
+                # 或通过 k3s 的端口转发
+                docker exec hpc101-node01 /usr/local/bin/k3s kubectl port-forward svc/hello-nginx 8080:80 &
+                curl http://localhost:8080
+            ```
+
+            - 停止容器：
+
+                ```bash
+                cd build/lab1-docker && docker compose down
+                ```
 
 !!! tip "k3s 进阶 Bonus"
 
