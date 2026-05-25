@@ -2,6 +2,7 @@
     "[markdown]": {
         "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
     },
+    "markdown-preview-enhanced.markdownParser": "markdown_yo",
     "markdownlint.config": {
         "MD046": false, // mkdocs material admonition
         "MD007": { "indent": 4 }, // mkdocs material list
