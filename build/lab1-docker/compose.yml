@@ -1,0 +1,66 @@
+services:
+  node01:
+    build:
+      context: ../..
+      dockerfile: build/lab1-docker/Dockerfile
+    image: hpc101-lab1:local
+    container_name: hpc101-node01
+    hostname: node01
+    privileged: true
+    environment:
+      LAB1_NFS_SERVER: "1"
+    volumes:
+      - hpc101-shared:/cluster/shared
+    networks:
+      lab1:
+        ipv4_address: 172.28.0.11
+
+  node02:
+    image: hpc101-lab1:local
+    container_name: hpc101-node02
+    hostname: node02
+    privileged: true
+    depends_on:
+      - node01
+    volumes:
+      - hpc101-shared:/cluster/shared
+    networks:
+      lab1:
+        ipv4_address: 172.28.0.12
+
+  node03:
+    image: hpc101-lab1:local
+    container_name: hpc101-node03
+    hostname: node03
+    privileged: true
+    depends_on:
+      - node01
+    volumes:
+      - hpc101-shared:/cluster/shared
+    networks:
+      lab1:
+        ipv4_address: 172.28.0.13
+
+  node04:
+    image: hpc101-lab1:local
+    container_name: hpc101-node04
+    hostname: node04
+    privileged: true
+    depends_on:
+      - node01
+    volumes:
+      - hpc101-shared:/cluster/shared
+    networks:
+      lab1:
+        ipv4_address: 172.28.0.14
+
+volumes:
+  hpc101-shared:
+    # 自动创建 named volume，无需外部预创建
+
+networks:
+  lab1:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
