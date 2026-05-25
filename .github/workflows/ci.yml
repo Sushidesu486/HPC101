@@ -34,10 +34,11 @@ jobs:
                   MKDOCS_GIT_COMMITTERS_APIKEY: ${{ secrets.GITHUB_TOKEN }}
             - run: mv site-slides/* site/slides/
             - run: rm -rf site/slides/assets/reveal-js/.git
-            - name: Deploy
-              if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'ZJUSCT/HPC101'
-              uses: peaceiris/actions-gh-pages@v4
+            - name: Deploy to Cloudflare Pages
+              if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+              uses: cloudflare/pages-action@v1
               with:
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
-                  publish_dir: ./site
-                  force_orphan: true
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  projectName: hpc101
+                  directory: site
