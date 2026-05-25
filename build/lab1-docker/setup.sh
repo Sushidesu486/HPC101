@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HPC101 Lab1 - Docker 保底方案 一键安装脚本
+# HPC101 Lab1 - Docker 环境一键部署脚本
 #
 # 用法：
 #   # 从 build/lab1-docker/ 目录运行
@@ -10,10 +10,11 @@
 # 该脚本会：
 #   1. 检查 Docker 环境
 #   2. 构建镜像
-#   3. 启动 4 节点容器
-#   4. 配置 NFS、MUNGE、Slurm
-#   5. 运行验证测试
-#   6. 提交 HPL 作业
+#   3. 启动 4 节点容器（容器入口自动配置 NFS + MUNGE + Slurm）
+#   4. 验证 NFS 跨节点共享
+#   5. 验证 MUNGE 认证
+#   6. 验证 Slurm 作业调度
+#   7. 提交 HPL 作业
 # =============================================================================
 set -euo pipefail
 
@@ -105,32 +106,45 @@ $DOCKER_COMPOSE -f "$SCRIPT_DIR/compose.yml" ps
 # =============================================================================
 log_info "========== Step 4: 验证 NFS 共享 =========="
 
+# 容器入口（entrypoint）已自动完成：
+#   - node01：启动 NFS server，导出 /cluster/shared
+#   - node02-04：重试挂载 node01:/cluster/shared
+# 本步骤仅做跨节点读写验证
+
+# 等待 NFS 客户端就绪（给 entrypoint 中的重试留出时间）
 NFS_OK=false
-
-# 尝试在 node01 启动 NFS（可能因 overlay 文件系统失败）
-if docker exec hpc101-node01 bash -c "mount -t nfsd nfsd /proc/fs/nfsd 2>/dev/null && exportfs -av 2>/dev/null && /etc/init.d/nfs-kernel-server start 2>/dev/null"; then
-    log_ok "NFS kernel server 启动成功"
-
-    # 在 node02 上测试挂载
-    if docker exec hpc101-node02 bash -c "mount -t nfs -o nolock node01:/cluster/shared /mnt 2>/dev/null && touch /mnt/nfs-test && umount /mnt"; then
+for i in $(seq 1 12); do
+    if docker exec hpc101-node02 bash -c "mount | grep -q '/cluster/shared.*nfs' 2>/dev/null"; then
         NFS_OK=true
-        log_ok "NFS 跨节点读写验证通过"
-    else
-        log_warn "NFS 挂载验证失败，使用 volume 替代"
+        log_ok "NFS 客户端挂载检测到 (node02)"
+        break
     fi
+    sleep 5
+done
+
+if [ "$NFS_OK" = true ]; then
+    # 跨节点读写验证
+    docker exec hpc101-node01 bash -c "echo 'NFS shared OK' > /cluster/shared/.nfs-test" 2>/dev/null
+    sleep 1
+    if docker exec hpc101-node04 bash -c "cat /cluster/shared/.nfs-test 2>/dev/null" | grep -q "NFS shared OK"; then
+        log_ok "NFS 跨节点读写验证通过 (node01 → node04)"
+    else
+        log_warn "NFS 跨节点读验证失败，文件可能未同步"
+    fi
+    docker exec hpc101-node01 rm -f /cluster/shared/.nfs-test 2>/dev/null || true
 else
-    log_warn "NFS kernel server 不可用（Docker 环境限制），使用 volume 替代"
-fi
+    log_warn "未检测到 NFS 挂载，将检查容器状态..."
 
-if [ "$NFS_OK" = false ]; then
-    log_info "容器已通过 Docker volume（hpc101-shared）共享 /cluster/shared"
-    log_info "所有容器可以直接读写 /cluster/shared，效果等价于 NFS"
-fi
+    for node in node01 node02 node03 node04; do
+        echo "--- $node mount 信息 ---"
+        docker exec "hpc101-$node" bash -c "mount | grep /cluster/shared" 2>/dev/null || echo "(未挂载)"
+        docker exec "hpc101-$node" bash -c "mount | grep nfsd" 2>/dev/null || echo "(nfsd 未挂载)"
+    done
 
-# 验证共享目录可写
-docker exec hpc101-node01 bash -c "touch /cluster/shared/.write-test && echo 'shared volume OK' > /cluster/shared/.write-test"
-docker exec hpc101-node02 bash -c "cat /cluster/shared/.write-test 2>/dev/null" | grep -q "shared volume OK"
-log_ok "共享目录读写正常"
+    log_warn "NFS 可能不可用（常见于 Docker Desktop on Windows/macOS）"
+    log_warn "所有节点的 /cluster/shared 仍可从镜像本地读取（HPL 已内置）"
+    log_warn "但文件写入不会被跨节点同步"
+fi
 
 # =============================================================================
 # Step 5: 验证 MUNGE
@@ -289,7 +303,7 @@ if [ -n "$JOB_ID" ]; then
 else
     log_error "HPL 作业提交失败，尝试直接运行..."
 
-    # 保底：直接通过 mpirun 运行
+    # 降级：直接通过 mpirun 运行
     docker exec hpc101-node01 bash -c "cd /cluster/shared/hpl-2.3/bin/Linux_PII_FBLAS && mpirun --allow-run-as-root --hostfile /opt/hpc/hostfile -np 4 ./xhpl 2>&1" | tail -20
 fi
 
@@ -298,7 +312,7 @@ fi
 # =============================================================================
 echo ""
 echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN}  HPC101 Lab1 Docker 保底方案部署完成${NC}"
+echo -e "${GREEN}  HPC101 Lab1 Docker 环境部署完成${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo "容器访问方式："
@@ -325,7 +339,9 @@ echo ""
 
 # 提示环境限制
 echo -e "${YELLOW}注意：${NC}"
-echo "  1. 如果 NFS 不可用，Docker volume 已自动替代共享目录"
+echo "  1. NFS 在 Docker Desktop (Windows/macOS) 上可能因内核模块限制不可用"
+echo "     - 如遇 NFS 失败，所有节点仍可访问镜像内置的 /cluster/shared 文件"
+echo "     - 但写入不会跨节点同步，如需共享写入请手动复制或改用 bind mount"
 echo "  2. Slurm 使用 ProctrackType=proctrack/linuxproc（cgroup 降级）"
 echo "  3. 容器内为 root 用户运行，mpirun 需加 --allow-run-as-root"
 echo "  4. 本方案仅供实验验证，不等同于真实 HPC 集群"

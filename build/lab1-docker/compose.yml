@@ -9,8 +9,6 @@ services:
     privileged: true
     environment:
       LAB1_NFS_SERVER: "1"
-    volumes:
-      - hpc101-shared:/cluster/shared
     networks:
       lab1:
         ipv4_address: 172.28.0.11
@@ -22,8 +20,6 @@ services:
     privileged: true
     depends_on:
       - node01
-    volumes:
-      - hpc101-shared:/cluster/shared
     networks:
       lab1:
         ipv4_address: 172.28.0.12
@@ -35,8 +31,6 @@ services:
     privileged: true
     depends_on:
       - node01
-    volumes:
-      - hpc101-shared:/cluster/shared
     networks:
       lab1:
         ipv4_address: 172.28.0.13
@@ -48,15 +42,9 @@ services:
     privileged: true
     depends_on:
       - node01
-    volumes:
-      - hpc101-shared:/cluster/shared
     networks:
       lab1:
         ipv4_address: 172.28.0.14
-
-volumes:
-  hpc101-shared:
-    # 自动创建 named volume，无需外部预创建
 
 networks:
   lab1:

@@ -82,10 +82,39 @@ setup_nfs_server() {
         log_ok "NFS 服务端已启动"
     else
         log_error "exportfs 失败，NFS kernel server 不可用（overlay 文件系统限制）"
-        log_info "将使用 Docker volume 替代 NFS 共享"
+        log_info "计算节点将使用镜像内置的 /cluster/shared（仅本节点可见）"
     fi
 }
+
+# ---------------------------------------------------------------------------
+# 3b. NFS 客户端配置（在所有非服务端节点上挂载 node01 的 NFS 导出）
+# ---------------------------------------------------------------------------
+setup_nfs_client() {
+    if [ "${LAB1_NFS_SERVER:-0}" = "1" ]; then
+        return
+    fi
+
+    log_info "连接 NFS 服务端 node01:/cluster/shared ..."
+
+    mkdir -p /cluster/shared
+    local retries=0
+    local max_retries=15
+
+    while [ $retries -lt $max_retries ]; do
+        if mount -t nfs -o nolock,vers=3,proto=tcp,timeo=10,retrans=3 \
+            node01:/cluster/shared /cluster/shared 2>/dev/null; then
+            log_ok "NFS 客户端挂载成功"
+            return 0
+        fi
+        sleep 3
+        retries=$((retries + 1))
+    done
+
+    log_error "NFS 挂载失败（${max_retries} 次重试后放弃）"
+    log_error "请检查 node01 NFS 服务：docker exec hpc101-node01 /etc/init.d/nfs-kernel-server status"
+}
 setup_nfs_server
+setup_nfs_client
 
 # ---------------------------------------------------------------------------
 # 4. MUNGE 配置
