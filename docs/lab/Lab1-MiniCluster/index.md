@@ -1737,6 +1737,104 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     sudo scontrol update NodeName="node02" State=RESUME
     ```
 
+??? tip "Docker 环境配置 Slurm 的注意事项"
+
+    如果你用的是 Docker 路线而不是虚拟机，配置 Slurm 时以下几个差异需要特别注意：
+
+    **1. systemd 不可用，需要手动启动服务**
+
+    容器内没有 `systemctl`，slurmctld 和 slurmd 需要直接运行：
+
+    ```bash
+    # node01 启动 slurmctld（前台运行或后台）
+    sudo slurmctld
+
+    # node02~04 启动 slurmd
+    sudo slurmd
+    ```
+
+    没有类似 `systemctl enable --now` 的机制，每次容器重启后都需要重新执行上面的命令。可以在 `entrypoint.sh` 中自动做这件事，省去手动操作。
+
+    **2. cgroup 不可用，需要修改 slurm.conf**
+
+    容器通常没有完整的 cgroup 接口，Slurm 默认的 `ProctrackType=proctrack/pgid` 或 `proctrack/cgroup` 可能无法正常工作。需要在 `slurm.conf` 中改为：
+
+    ```text
+    ProctrackType=proctrack/linuxproc
+    ```
+
+    这个模式通过 `/proc` 文件系统跟踪进程，功能上不如 cgroup 精细（无法精确限制 CPU/内存），但足够完成本 Lab 的作业调度验证。
+
+    如果 `slurmd` 启动时还报了 `Cgroup` 相关的错误，再添加一行：
+
+    ```text
+    CgroupPlugin=cgroup/v1
+    ```
+
+    **3. MUNGE key 分发**
+
+    Docker 中没有 `scp` 跨容器网络直达的问题——前提是容器间 SSH 免密已配好。一种更方便的做法是：在 `node01` 生成 MUNGE key 后放到共享目录，其他容器从共享目录读取：
+
+    ```bash
+    # node01 上生成 key 并复制到共享目录
+    sudo /usr/sbin/mungekey --create
+    sudo cp /etc/munge/munge.key /cluster/shared/munge.key
+    sudo chown munge:munge /etc/munge/munge.key
+    sudo chmod 400 /etc/munge/munge.key
+    chmod 644 /cluster/shared/munge.key
+
+    # node02~04 上从共享目录读取
+    sudo cp /cluster/shared/munge.key /etc/munge/munge.key
+    sudo chown munge:munge /etc/munge/munge.key
+    sudo chmod 400 /etc/munge/munge.key
+    ```
+
+    这样即使容器重建，只要共享目录还在（volume 不删），MUNGE key 就不会丢失。
+
+    **4. 容器重启后状态丢失**
+
+    `docker compose down && up` 重建后，以下全部需要重新做：
+
+    - MUNGE key 重新生成或从 volume 重新加载（如果上面按共享目录方案做了则无需手动操作）
+    - `/var/spool/slurmctld` 和 `/var/spool/slurmd` 目录重建
+    - slurmctld / slurmd 重新启动
+    - 节点状态恢复（`scontrol update ... State=RESUME`）
+
+    如果每次重启都要手动做一遍这些操作会很烦。建议在 `entrypoint.sh` 中固化以下逻辑：
+
+    ```bash
+    # 从共享目录加载 MUNGE key
+    if [ -f /cluster/shared/munge.key ]; then
+        cp /cluster/shared/munge.key /etc/munge/munge.key
+        chown munge:munge /etc/munge/munge.key
+        chmod 400 /etc/munge/munge.key
+    fi
+
+    # 启动 munged（如果未运行）
+    pidof munged >/dev/null 2>&1 || /usr/sbin/munged
+
+    # 创建 spool 目录并启动 Slurm
+    case "$(hostname)" in
+        node01)
+            mkdir -p /var/spool/slurmctld /var/log/slurm
+            chown slurm:slurm /var/spool/slurmctld /var/log/slurm
+            pidof slurmctld >/dev/null 2>&1 || slurmctld
+            ;;
+        *)
+            mkdir -p /var/spool/slurmd /var/log/slurm
+            pidof slurmd >/dev/null 2>&1 || slurmd
+            ;;
+    esac
+    ```
+
+    **5. 容器需要 privileged 模式**
+
+    Slurm 在容器内运行需要访问 `/sys`、`/proc` 和 cgroup 接口。如果没有 `privileged: true`，slurmd 可能会因为无法读取系统资源信息而启动失败。在 `compose.yml` 中每个服务都需要设置：
+
+    ```yaml
+    privileged: true
+    ```
+
 ## 任务四：使用 Slurm 提交 HPL
 
 在完成 HPL 编译、NFS 共享目录和 Slurm 配置后，你需要通过 Slurm 提交 HPL 任务。这个任务是本 Lab 的最终验收：不再手工指定 hostfile 直接运行，而是让 Slurm 分配节点并启动作业。
