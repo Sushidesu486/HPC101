@@ -962,7 +962,7 @@ node04  计算节点
 
     仓库的 `build/lab1-docker/` 目录下提供了一个完整的 Docker 参考实现，包含 Dockerfile、Compose 文件和启动脚本。你可以直接使用，也可以参照它自行编写。
 
-     !!! tip "Docker 中配置 NFS — 完全可行"
+    !!! tip "Docker 中配置 NFS — 完全可行"
 
         Docker 中是可以配置 NFS 的（已验证通过），只要容器以 `privileged: true` 运行。关键步骤如下：
 
