@@ -980,7 +980,7 @@ node04  计算节点
         2. 使用 `mount -t nfs -o nolock <server_ip>:/cluster/shared /cluster/shared` 挂载。
            - `nolock` 参数可以避免 rpc.statd 问题，在 Docker 环境中是必要的。
 
-        !!! warning "NFS 在 Docker 中的注意事项"
+        ??? warning "NFS 在 Docker 中的注意事项"
 
             以下是实际操作中可能遇到的问题：
 
