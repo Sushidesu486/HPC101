@@ -4,7 +4,13 @@
 
     本文档当前版本为2026年课程的实验文档，仅供参考！
     文档中实验步骤相关命令仅供参考，不要直接复制粘贴！因为这些都依赖于你当前的机器环境，可能会导致你的系统环境乱套。
-    我们希望你在实验中充分使用Agent工具，但是不要把Agent当成你的牛马员工，所有事情给他干，你至少需要知道你在做什么。
+    
+
+!!!warning "关于Agent"
+    
+    当前Agent对于系统环境搭建的活已经非常熟悉了，在我们的测试下，他们可以在很短的时间内完成Lab1实验内容.
+    当然，我们希望你在实验中充分使用Agent工具，但是不要把Agent当成你的牛马员工，所有事情给他干，你至少需要知道你在做什么。
+    在自己的脑海中构建起一个完整的知识架构，远比背下各种奇奇怪怪的命令行要重要。
 
 ## 导言：计算机集群
 
@@ -985,6 +991,14 @@ node04  计算节点、NFS 客户端、Slurm compute node
 
     <!-- TODO: nfs_verify.webp - 跨节点 NFS 写入/读取验证截图（node02 写入、node01 读取） -->
 
+    **node02 侧**（挂载 NFS + 创建文件）：
+
+    ![NFS 客户端验证](image/nfs_verify_1.webp)
+
+    **node01 侧**（检查 NFS 服务 + 验证文件可见）：
+
+    ![NFS 服务端验证](image/nfs_verify_2.webp)
+
     如果你希望开机自动挂载，可以在客户端的 `/etc/fstab` 中加入：
 
     ```text
@@ -1082,24 +1096,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     sudo chmod 400 /etc/munge/munge.key
     ```
 
-    将 `/etc/munge/munge.key` 复制到其他节点。注意不要直接使用 `sudo scp`，否则可能会尝试用 root 身份登录远端节点。
-
-    ```bash
-    sudo cp /etc/munge/munge.key /tmp/munge.key
-    sudo chown "$USER:$USER" /tmp/munge.key
-    scp /tmp/munge.key node02:/tmp/munge.key
-    scp /tmp/munge.key node03:/tmp/munge.key
-    scp /tmp/munge.key node04:/tmp/munge.key
-    rm /tmp/munge.key
-    ```
-
-    在 `node02`、`node03`、`node04` 上执行：
-
-    ```bash
-    sudo mv /tmp/munge.key /etc/munge/munge.key
-    sudo chown munge:munge /etc/munge/munge.key
-    sudo chmod 400 /etc/munge/munge.key
-    ```
+    将 `/etc/munge/munge.key` 复制到其他计算节点（用 `scp` 即可），并在每个计算节点上把 key 放到 `/etc/munge/munge.key`，设置权限 `400`、属主 `munge:munge`。
 
     在所有节点启动并验证 MUNGE：
 
@@ -1208,6 +1205,10 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     ```
     
     <!-- TODO: slurm_sinfo.webp - sinfo 输出截图，展示 debug 分区下节点状态为 idle -->
+
+    **sinfo + squeue + HPL 输出示例**（两个计算节点 idle，HPL 结果 1.1611e+01 Gflops）：
+
+    ![Slurm 集群状态与 HPL 结果](image/slurm_sinfo.webp)
 
     如果节点显示为 `down`，可以先查看日志：
 
@@ -1383,9 +1384,9 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
         - 优化 OpenMP 绑核参数
         - 调整 MPI 进程绑定，rank 拓扑
 
-     请记录你尝试过的优化方法及其效果，分析性能提升的原因。性能的绝对值不作为评判依据，重要的是你通过哪些方法提高了性能，以及你对这些优化方法的理解。
+      请记录你尝试过的优化方法及其效果，分析性能提升的原因。性能的绝对值不作为评判依据，重要的是你通过哪些方法提高了性能，以及你对这些优化方法的理解。
 
-<!-- TODO: slurm_hpl.webp - sbatch 提交 HPL 后的输出截图（squeue 状态 + HPL 性能结果） -->
+<!-- TODO: slurm_hpl.webp - 见上方 Task 3 末尾的 sinfo/squeue/HPL 综合截图 -->
 
 ## Bonus 任务
 
