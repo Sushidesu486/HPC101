@@ -980,7 +980,7 @@ node04  计算节点
         2. 使用 `mount -t nfs -o nolock <server_ip>:/cluster/shared /cluster/shared` 挂载。
            - `nolock` 参数可以避免 rpc.statd 问题，在 Docker 环境中是必要的。
 
-        ??? warning "NFS 在 Docker 中的注意事项"
+        !!! warning "NFS 在 Docker 中的注意事项"
 
             以下是实际操作中可能遇到的问题：
 
@@ -1928,7 +1928,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
 !!! tip "Bonus"
 
-    [k3s](https://k3s.io/) 是一个轻量级 Kubernetes 发行版。它和 Slurm 都可以管理多节点集群，但目标场景不同：Slurm 更适合 HPC 批处理作业和资源排队，Kubernetes 更适合长期运行的容器化服务和云原生应用。
+    [k3s](https://k3s.io/) 是一个轻量级 Kubernetes 发行版，是我们集群正在使用的k8s的轻量版，适合于本地跑小型的部署实验。它和 Slurm 都可以管理多节点集群，但目标场景不同：Slurm 更适合 HPC 批处理作业和资源排队，Kubernetes 更适合长期运行的容器化服务和云原生应用。
 
     可参考的文档：
 
@@ -1945,6 +1945,9 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     - 创建一个简单的 Deployment，例如 `nginx`。
     - 能通过 `kubectl get pods -o wide` 看到 Pod 被调度到节点上。
     - 能通过 Service、端口转发或 NodePort 访问该应用。
+
+    !!! warning "当心别被 k3s 撑爆了！"
+        
 
     ??? success "步骤参考和说明"
 
