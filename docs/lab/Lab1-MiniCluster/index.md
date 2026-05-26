@@ -488,7 +488,7 @@ NFS 对初学者最容易出问题的是权限。原因在于 Linux 文件权限
 
     更多参考：`man usermod`、`man groupmod`
 
-实际维护集群时，还需要继续关注一些 NFS 配置细节：`/etc/exports` 中的导出范围不应过大，避免把共享目录暴露给不可信网段；`root_squash`、只读导出、客户端网段限制等选项会影响安全性和可维护性；`/etc/fstab` 可以实现开机自动挂载，但网络未就绪时可能导致挂载失败，必要时可以了解 autofs。NFS 适合入门和中小规模共享目录；更大规模集群可能会使用 Lustre、CephFS 等文件系统。
+实际维护集群时，还需要继续关注一些 NFS 配置细节：`/etc/exports` 中的导出范围不应过大，避免把共享目录暴露给不可信网段；`root_squash`、只读导出、客户端网段限制等选项会影响安全性和可维护性；`/etc/fstab` 可以实现开机自动挂载，但网络未就绪时可能导致挂载失败，必要时可以了解 autofs。NFS 适合入门和中小规模共享目录；更大规模集群可能会使用 Lustre、CephFS 等文件系统(虽说我们的Ceph性能有些差，期待来一位运维大手子)。
 
 !!! note "NFS 解决的是共享文件问题"
 
@@ -1366,8 +1366,6 @@ node04  计算节点
     cat /cluster/shared/node02.txt
     ```
 
-    <!-- TODO: nfs_verify.webp - 跨节点 NFS 写入/读取验证截图（node02 写入、node01 读取） -->
-
     **node02 侧**（挂载 NFS + 创建文件）：
 
     ![NFS 客户端验证](image/nfs_verify_1.webp)
@@ -1542,8 +1540,6 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     sinfo -N -l
     ```
     
-    <!-- TODO: slurm_sinfo.webp - sinfo 输出截图，展示 debug 分区下节点状态为 idle -->
-
     **sinfo + squeue + HPL 输出示例**（两个计算节点 idle，HPL 结果 1.1611e+01 Gflops）：
 
     ![Slurm 集群状态与 HPL 结果](image/slurm_sinfo.webp)
@@ -1822,8 +1818,6 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
       请记录你尝试过的优化方法及其效果，分析性能提升的原因。性能的绝对值不作为评判依据，重要的是你通过哪些方法提高了性能，以及你对这些优化方法的理解。
 
-<!-- TODO: slurm_hpl.webp - 见上方 Task 3 末尾的 sinfo/squeue/HPL 综合截图 -->
-
 ## Bonus 任务
 
 !!! warning "Bonus 任务是什么?"
@@ -1850,7 +1844,15 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
     本 Bonus 要求你搭建一个最小 k3s 集群，并在报告中给出基本的验证结果。具体可参考下面的折叠框。
 
     !!! warning "当心别被 k3s 撑爆了！"
-        
+        k3s 虽然比完整 k8s 轻量得多，但它仍然是一个**完整的容器编排系统**——运行着 API server、scheduler、controller-manager、containerd 等组件。实际测试中：
+
+        - **k3s server**（`node01`）：空闲状态约占用 600 MB - 1 GB 内存，再加上 Lab1 必做任务的服务（NFS、Slurm），2 GB 内存的节点会非常吃力。
+        - **k3s agent**（`node02`）：约 300 - 500 MB。
+
+        建议：
+        - 如果虚拟机只有 2 GB 内存，**不要在 node01 上同时跑 k3s server + Slurm 控制节点 + NFS 服务**。给 k3s 单独开一个节点，或给 node01 加到 4 GB。
+        - 在部署 Pod 之前先用 `free -h` 确认剩余内存足够。
+        - 部署完记得 `docker system prune`（k3s 内置 containerd 用 `crictl rmi --prune`）清理没用的镜像。
 
     ??? success "步骤参考和说明"
 
