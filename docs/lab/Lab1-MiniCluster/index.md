@@ -1960,15 +1960,17 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
             - 验证时既可以走 ClusterIP，也可以直接通过 Docker 子网中的 NodePort 访问。例如本次参考实现中，`hello-nginx` 可通过 `curl http://172.28.0.12:NODEPORT` 验证；如果你环境不同，也可以使用 ClusterIP 或 `kubectl port-forward`：
 
                 ```bash
-                # 在 node01 容器内部通过 ClusterIP 访问
+                # 在 node01 容器内部查看 Service 信息
                 docker exec hpc101-node01 /usr/local/bin/k3s kubectl get svc hello-nginx
-                # → 记录 CLUSTER-IP，然后：
+                # 记下输出的 CLUSTER-IP，然后测试连通性：
                 docker exec hpc101-node01 curl -s http://CLUSTER-IP
 
-                # 或通过 k3s 的端口转发
+                # 或通过端口转发（注意：curl 要在宿主机上执行，不是容器内）
                 docker exec hpc101-node01 /usr/local/bin/k3s kubectl port-forward svc/hello-nginx 8080:80 &
+                sleep 2
                 curl http://localhost:8080
-            ```
+                kill %1  # 用完后关掉端口转发
+                ```
 
             - 停止容器：
 
