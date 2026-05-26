@@ -913,6 +913,33 @@ zlib 是 OpenMPI 的可选依赖，用于改善数据传输性能，可在构建
     HPL.dat  xhpl
     ```
 
+## 知识讲解：多节点环境与 NFS 共享文件系统
+
+!!! tip "前置知识"
+
+    掌握 Lab 0 中的内容：Linux 文件系统、用户与权限、主机名、SSH 登录、软件包管理，以及基本的网络连通性检查。
+
+!!! tip "学习目标"
+
+    这一部分的学习目标是理解一个小型集群为什么需要统一的节点命名、用户身份和共享文件系统。后面的 NFS、Slurm 和 HPL 提交都会建立在这些基础之上。
+
+    **这一部分不需要体现在报告中，但你需要在报告里体现自己完成了对应验证。**
+
+在单机环境里，程序、输入文件和输出文件都在同一台机器上，路径问题通常不明显。但在集群环境中，一个 MPI 程序可能在多个节点上同时启动。如果 `node01` 上有 `xhpl`，而 `node02` 上同一路径不存在这个文件，那么远端进程就会直接失败。解决这个问题的常见办法有两类：一类是把同样的文件复制到所有节点，另一类是让所有节点挂载同一个共享目录。
+
+NFS（Network File System）属于第二种做法。它让一个节点把本地目录导出给网络中的其他节点，其他节点再把这个远端目录挂载到自己的文件系统中。挂载完成后，用户看到的是一个普通目录，但实际读写会通过网络访问 NFS 服务端。
+
+!!! note "NFS 不是复制文件"
+
+    NFS 的重点不是“把文件同步到每台机器”，而是“让多台机器看到同一份远端目录”。因此，如果网络、权限或服务端配置有问题，所有依赖这个共享目录的作业都会受到影响。
+
+在本实验中，`node01` 通常同时承担登录节点、NFS server 和 Slurm controller 的职责；`node02` 到 `node04` 作为计算节点，挂载共享目录并运行计算任务。为了让这个结构正常工作，你需要特别注意下面几个概念：
+
+- **主机名解析**：节点之间要能通过 `node01`、`node02` 这样的名字找到彼此，而不是只依赖临时 IP。
+- **SSH 免密登录**：MPI 和集群管理操作经常需要从控制节点访问计算节点，反复输入密码会让自动化流程变得不可用。
+- **UID / GID 一致**：Linux 权限判断依赖数字形式的 UID 和 GID，而不是用户名字符串。不同节点上同名用户如果 UID 不同，NFS 中的文件属主和权限就可能表现异常。
+- **路径一致性**：HPL、作业脚本和输出目录应放在所有节点都能访问的同一路径下，否则调度系统分配到远端节点后可能找不到文件。
+
 ## 任务二：配置 NFS 共享目录
 
 !!! tip "先准备多节点基础环境"
@@ -955,51 +982,9 @@ node04  计算节点
 
     [cards(docs/lab/Lab1-MiniCluster/clone.json)]
 
-    修改主机名：
+    按虚拟机 / 物理机路线搭建时，建议依次完成下面几件事：先为每个节点设置明确的主机名，再记录各节点的 IP 地址，然后把这些节点地址写入所有节点的主机解析配置中。接着，在 `node01` 上生成 SSH 密钥，并把公钥分发到其他节点，以保证后续可以无密码登录。最后，依次确认主机名解析是否正常、SSH 免密登录是否可用，以及各节点上实验用户的 UID / GID 是否一致。
 
-    ```bash
-    sudo hostnamectl set-hostname node01
-    sudo reboot
-    ```
-
-    获取 IP 地址：
-
-    ```bash
-    ip a
-    ```
-
-    在所有节点的 `/etc/hosts` 中加入节点地址。下面只是示例，请替换为你的实际 IP：
-
-    ```text
-    192.168.136.130 node01
-    192.168.136.131 node02
-    192.168.136.132 node03
-    192.168.136.133 node04
-    ```
-
-    在 `node01` 生成 SSH 密钥，并复制到其他节点：
-
-    ```bash
-    ssh-keygen
-    ssh-copy-id user@node02
-    ssh-copy-id user@node03
-    ssh-copy-id user@node04
-    ```
-
-    验证主机名解析和 SSH 免密登录：
-
-    ```bash
-    getent hosts node01 node02 node03 node04
-    ssh node02 hostname
-    ssh node03 hostname
-    ssh node04 hostname
-    ```
-
-    检查 UID/GID 是否一致：
-
-    ```bash
-    id
-    ```
+    其中，`/etc/hosts` 中的节点映射可以参考“node01 到 node04 都有对应 IP”的形式来写，但请替换成你自己的实际地址。
 
     如果不同节点上的同名用户 UID/GID 不一致，NFS 访问和 Slurm 作业权限都可能出现难以定位的问题。你可以重新创建用户，或在理解风险后修改 UID/GID。
 
@@ -1054,62 +1039,13 @@ node04  计算节点
 
 你需要完成以下要求：
 
-- 在 `node01` 上安装并配置 NFS server。
-- 在 `node02`、`node03`、`node04` 上安装 NFS client。
-- 所有节点都能访问同一个共享目录。
-- 从任意计算节点写入的文件，能在其他节点看到。
-- 将 HPL 可执行文件、`HPL.dat`、Slurm 作业脚本或实验输出放在共享目录中。
+先在 `node01` 上准备 NFS 服务端，把 `/cluster/shared` 创建出来并导出给实验网段；再在 `node02`、`node03`、`node04` 上准备 NFS 客户端，把同一个共享目录挂载到本地。验证时要真的从某个节点写入测试文件，再到其他节点检查能否读到同一份内容。后续的 HPL 可执行文件、`HPL.dat`、Slurm 作业脚本和实验输出都建议统一放到这个共享目录中。
 
 ??? success "步骤参考和说明"
 
     === "虚拟机 / 物理机"
 
-        在 `node01` 安装 NFS server：
-
-        ```bash
-        sudo apt update
-        sudo apt install -y nfs-kernel-server
-        sudo mkdir -p /cluster/shared
-        sudo chown -R "$USER:$USER" /cluster/shared
-        ```
-
-        编辑 `/etc/exports`。下面的网段只是示例，请替换为你的实际集群网段：
-
-        ```text
-        /cluster/shared 192.168.136.0/24(rw,sync,no_subtree_check)
-        ```
-
-        重新导出共享目录并启动服务：
-
-        ```bash
-        sudo exportfs -ra
-        sudo systemctl enable --now nfs-kernel-server
-        sudo exportfs -v
-        ```
-
-        在 `node02`、`node03`、`node04` 安装 NFS client 并挂载目录：
-
-        ```bash
-        sudo apt update
-        sudo apt install -y nfs-common
-        sudo mkdir -p /cluster/shared
-        sudo mount node01:/cluster/shared /cluster/shared
-        ```
-
-        验证挂载：
-
-        ```bash
-        mount | grep /cluster/shared
-        df -h /cluster/shared
-        ```
-
-        从不同节点写入文件并互相检查：
-
-        ```bash
-        echo "hello from $(hostname)" > /cluster/shared/$(hostname).txt
-        ls -l /cluster/shared
-        cat /cluster/shared/node02.txt
-        ```
+        在 `node01` 上先完成 NFS 服务端准备：安装相关组件、创建共享目录、配置导出规则并启动服务。然后在 `node02`、`node03`、`node04` 上完成客户端准备，把 `node01` 导出的共享目录挂载到本地。确认是否成功时，不要只看服务状态，而是实际从不同节点写入和读取同一个测试文件，确认共享目录确实对所有节点可见。
 
         <!-- TODO: nfs_verify.webp - 跨节点 NFS 写入/读取验证截图（node02 写入、node01 读取） -->
 
@@ -1121,11 +1057,7 @@ node04  计算节点
 
         ![NFS 服务端验证](image/nfs_verify_2.webp)
 
-        如果你希望开机自动挂载，可以在客户端的 `/etc/fstab` 中加入：
-
-        ```text
-        node01:/cluster/shared /cluster/shared nfs defaults,_netdev 0 0
-        ```
+        如果你希望开机自动挂载，可以把这条挂载关系写入客户端的自动挂载配置，这样节点重启后也会自动恢复共享目录。
 
     === "Docker"
 
@@ -1149,11 +1081,38 @@ node04  计算节点
 
     UID/GID 的概念和修改方法已经在知识讲解的「NFS：集群如何共享文件」部分详细介绍过了。在这里你只需要确保所有节点上你的 UID/GID 一致：
 
-    ```bash
-    id  # 在每个节点上执行，对比输出是否相同
-    ```
+    在每个节点上检查当前用户的 UID 和 GID，并对比它们是否一致即可。
 
     不一致的话回到知识讲解查看修改方法。
+
+## 知识讲解：作业调度系统与 Slurm
+
+!!! tip "前置知识"
+
+    理解前面搭建的多节点环境、NFS 共享目录、Linux 服务进程、用户权限，以及基本的进程概念。
+
+!!! tip "学习目标"
+
+    这一部分的学习目标是理解为什么 HPC 集群通常不让用户手动登录计算节点运行程序，而是通过作业调度系统统一申请资源、排队和启动任务。
+
+    **这一部分不需要体现在报告中，但报告中需要展示 Slurm 集群确实可用。**
+
+在前面的 MPI 示例中，我们可以手工指定 hostfile，然后直接启动多个进程。这种方式适合教学和调试，但不适合真实集群。真实集群通常有很多用户同时提交作业，如果每个人都手动登录计算节点运行程序，就很容易出现资源抢占、节点过载、作业互相影响和结果难以追踪的问题。
+
+Slurm 的作用就是把“我想运行一个程序”变成“我向集群申请一组资源，然后由调度器决定何时、在哪些节点上启动程序”。用户不需要自己挑空闲节点，管理员也可以通过分区、队列、时间限制和优先级控制整个集群的使用方式。
+
+一个最小 Slurm 集群通常包含下面几个角色：
+
+- **控制节点**：运行 `slurmctld`，负责接收作业、维护队列、分配资源和记录状态。本 Lab 中推荐使用 `node01`。
+- **计算节点**：运行 `slurmd`，负责接受控制节点分配的任务并在本机启动进程。本 Lab 中通常是 `node02` 到 `node04`。
+- **认证服务**：Slurm 常与 MUNGE 搭配使用，确保各节点之间的调度请求可信。所有节点必须使用同一份 MUNGE key。
+- **统一配置**：所有节点上的 `slurm.conf` 必须一致，否则控制节点和计算节点对集群结构的理解会不同。
+
+!!! note "先验证调度，再运行 HPL"
+
+    搭好 Slurm 后，不要马上提交 HPL。更稳妥的顺序是先确认节点状态正常，再运行最小的 `hostname` 作业，最后再提交 HPL。这样一旦出错，你能更快判断问题出在 Slurm、NFS、MPI 还是 HPL 本身。
+
+Slurm 里常见的几个命令也对应着不同的概念：`sinfo` 用来看集群和节点状态，`squeue` 用来看作业队列，`srun` 适合快速启动交互式或简单任务，`sbatch` 则用于提交脚本化的批处理作业。你不需要死记这些命令，但需要理解它们分别回答了什么问题。
 
 ## 任务三：配置 Slurm 作业调度系统
 
@@ -1172,189 +1131,22 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
 你需要完成以下要求：
 
-- 所有节点安装 Slurm 和 MUNGE。
-- 所有节点使用相同的 MUNGE key，且 `munge -n | unmunge` 能正常工作。
-- 所有节点使用一致的 `/etc/slurm/slurm.conf`。
-- `node01` 上运行 `slurmctld`，计算节点上运行 `slurmd`。
-- `sinfo` 能看到节点和分区。
-- `srun` 能在计算节点上运行 `hostname`。
-- `sbatch` 能提交脚本，作业输出写入 NFS 共享目录。
+先在所有节点安装 Slurm 和 MUNGE，再保证所有节点使用同一份 MUNGE key，并准备好完全一致的 `slurm.conf`。接着让 `node01` 运行控制端服务、计算节点运行工作端服务，最后通过 `sinfo`、`srun` 和 `sbatch` 这些验证动作确认调度系统已经真正可用，且作业输出能够写入 NFS 共享目录。
 
 ??? success "步骤参考和说明"
 
     === "虚拟机 / 物理机"
 
-        在所有节点安装 Slurm 和 MUNGE：
-
-        ```bash
-        sudo apt update
-        sudo apt install -y munge slurm-wlm
-        ```
-
-        在 `node01` 生成 MUNGE key：
-
-        ```bash
-        sudo mungekey --create
-        sudo chown munge:munge /etc/munge/munge.key
-        sudo chmod 400 /etc/munge/munge.key
-        ```
-
-        将 `/etc/munge/munge.key` 复制到其他计算节点（用 `scp` 即可），并在每个计算节点上把 key 放到 `/etc/munge/munge.key`，设置权限 `400`、属主 `munge:munge`。
-
-        在所有节点启动并验证 MUNGE：
-
-        ```bash
-        sudo systemctl enable --now munge
-        munge -n | unmunge
-        ```
-
-        使用 `slurmd -C` 查看每个计算节点的硬件信息：
-
-        ```bash
-        slurmd -C
-        ```
-
-        在所有节点创建 `/etc/slurm/slurm.conf`。下面是一个带注释的示例，其中 `CPUs=1` 请根据 `slurmd -C` 的输出调整，`NodeName` 和 `NodeAddr` 请替换为你的实际主机名和 IP（**所有节点上的这个文件必须一模一样**）：
-
-        ```text
-        # /etc/slurm/slurm.conf
-        # ===== 必须项 =====
-        ClusterName=hpc101                   # 集群名称，必须指定
-        SlurmctldHost=node01                 # 控制节点主机名，必须与实际 hostname 一致
-
-        # ===== 基本设置 =====
-        SlurmUser=slurm
-        AuthType=auth/munge
-        CredType=cred/munge
-        MpiDefault=none                      # MPI 默认模式
-        ProctrackType=proctrack/pgid         # 进程跟踪方式
-        ReturnToService=2
-
-        # ===== 调度与资源选择 =====
-        SelectType=select/cons_tres
-        SelectTypeParameters=CR_CPU
-        SchedulerType=sched/backfill
-        TaskPlugin=task/none
-
-        # ===== 状态与日志 =====
-        StateSaveLocation=/var/spool/slurmctld
-        SlurmdSpoolDir=/var/spool/slurmd
-        SlurmctldLogFile=/var/log/slurm/slurmctld.log
-        SlurmdLogFile=/var/log/slurm/slurmd.log
-        SlurmctldPidFile=/var/run/slurmctld.pid
-        SlurmdPidFile=/var/run/slurmd.pid
-
-        # ===== 节点定义（按你的实际 IP 和 hostname 修改） =====
-        # 只有 2 个节点：NodeName=node02 CPUs=1 State=UNKNOWN
-        NodeName=node[02-04] CPUs=1 State=UNKNOWN
-        # 如果用独立 IP，写法如下：
-        # NodeName=node02 NodeAddr=192.168.136.131 CPUs=1 State=UNKNOWN
-
-        # ===== 分区定义 =====
-        PartitionName=debug Nodes=node[02-04] Default=YES MaxTime=INFINITE State=UP
-        ```
+        在所有节点先安装 Slurm 和 MUNGE，再在 `node01` 生成 MUNGE key 并分发到其他节点，确保每台机器都使用同一份认证材料。随后启动并验证 MUNGE，确认它能正常签发和解签。接着用 `slurmd -C` 查看计算节点硬件信息，再在所有节点上准备完全一致的 `slurm.conf`；这个文件里涉及节点名、节点地址、资源数量和分区定义的内容都需要按你的实际环境填写。
 
         !!! warning "Ubuntu 用户注意"
             Ubuntu 通过 `apt` 安装的 SLURM 期望配置文件位于 `/etc/slurm-llnl/`，而非 `/etc/slurm/`。如果你运行 `slurmd` 时遇到 `ConditionPathExists=/etc/slurm-llnl/slurm.conf was not met` 错误，可以任选以下方式之一解决：
 
-            **方式一（推荐）：直接放到正确目录**
-            ```bash
-            sudo mkdir -p /etc/slurm-llnl
-            sudo cp /etc/slurm/slurm.conf /etc/slurm-llnl/slurm.conf
-            ```
-            以后改配置就只改 `/etc/slurm-llnl/slurm.conf`，`/etc/slurm/` 下的那份删掉即可。
+            Ubuntu 的 SLURM 更希望配置文件位于 `/etc/slurm-llnl/`，所以你需要让系统能够在那个路径下找到同一份 `slurm.conf`。最直接的做法是把配置放到正确目录；如果你更想保留 `/etc/slurm/` 作为统一路径，也可以通过符号链接或者 systemd 覆盖来实现。三种方式任选一种即可，只要最终 `slurmd` 能读到同一份配置。
 
-            **方式二：创建符号链接**
-            ```bash
-            sudo mkdir -p /etc/slurm-llnl
-            sudo ln -sf /etc/slurm/slurm.conf /etc/slurm-llnl/slurm.conf
-            ```
+        配置完成后，在 `node01` 上准备控制端运行所需的 spool 和日志目录，并启动 `slurmctld`；在 `node02`、`node03`、`node04` 上准备计算端运行所需的目录，并启动 `slurmd`。然后回到 `node01` 检查集群状态，确认节点出现在 `sinfo` 中并且状态正常，再根据需要恢复处于 `down` 状态的节点。
 
-            **方式三：修改 systemd 单元文件**
-            ```bash
-            sudo mkdir -p /etc/systemd/system/slurmd.service.d
-            sudo tee /etc/systemd/system/slurmd.service.d/override.conf <<EOF
-            [Unit]
-            ConditionPathExists=
-            ConditionPathExists=/etc/slurm/slurm.conf
-            EOF
-            sudo systemctl daemon-reload
-            ```
-
-            三种方式任选一种即可。方式一最直观，不需要理解 systemd 和符号链接；方式二适合希望保留 `/etc/slurm/` 作为统一配置路径的强迫症患者；方式三是最「正统」的 systemd 做法但需要理解 drop-in 机制。
-
-        在 `node01` 创建 Slurm 控制节点目录：
-
-        ```bash
-        sudo mkdir -p /var/spool/slurmctld /var/log/slurm
-        sudo chown -R slurm:slurm /var/spool/slurmctld /var/log/slurm
-        sudo systemctl enable --now slurmctld
-        ```
-
-        在 `node02`、`node03`、`node04` 创建计算节点目录并启动 `slurmd`：
-
-        ```bash
-        sudo mkdir -p /var/spool/slurmd /var/log/slurm
-        sudo chown -R root:root /var/spool/slurmd
-        sudo chown -R slurm:slurm /var/log/slurm
-        sudo systemctl enable --now slurmd
-        ```
-
-        回到 `node01` 检查集群状态：
-        
-        ```bash
-        sinfo
-        sinfo -N -l
-        ```
-        
-        <!-- TODO: slurm_sinfo.webp - sinfo 输出截图，展示 debug 分区下节点状态为 idle -->
-
-        **sinfo + squeue + HPL 输出示例**（两个计算节点 idle，HPL 结果 1.1611e+01 Gflops）：
-
-        ![Slurm 集群状态与 HPL 结果](image/slurm_sinfo.webp)
-
-        如果节点显示为 `down`，可以先查看日志：
-
-        ```bash
-        sudo journalctl -u slurmctld -n 80
-        sudo journalctl -u slurmd -n 80
-        ```
-
-        在确认配置无误后，可以将节点恢复为可调度状态：
-
-        ```bash
-        sudo scontrol update NodeName="node[02-04]" State=RESUME
-        ```
-
-        使用 `srun` 验证调度：
-
-        ```bash
-        srun -N3 -n3 hostname
-        ```
-
-        创建一个简单的 `sbatch` 脚本，并保存到 NFS 共享目录 `/cluster/shared/hello.slurm`：
-
-        ```bash
-        #!/bin/bash
-        #SBATCH --job-name=hello
-        #SBATCH --partition=debug
-        #SBATCH --nodes=2
-        #SBATCH --ntasks-per-node=1
-        #SBATCH --output=/cluster/shared/hello-%j.out
-
-        hostname
-        date
-        pwd
-        ```
-
-        提交并查看结果：
-
-        ```bash
-        sbatch /cluster/shared/hello.slurm
-        squeue
-        ls -l /cluster/shared/hello-*.out
-        cat /cluster/shared/hello-*.out
-        ```
+        验证阶段可以先查看 `sinfo` 和 `squeue`，再用 `srun` 跑一个最小的 `hostname` 测试，确认调度器确实能把任务派到计算节点。之后准备一个最简单的 `sbatch` 作业脚本，放到 NFS 共享目录中提交，检查作业输出是否也能写回共享目录。
 
         ??? tip "Slurm 常见故障排查"
 
@@ -1429,6 +1221,28 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
             - **作业能提交但无法运行**：检查 `node01` 与计算节点是否看到同一份 NFS 共享目录，以及作业脚本、HPL 可执行文件路径是否一致。
             - **容器重建后一切失效**：这通常不是 Slurm 本身的问题，而是因为 MUNGE key、spool 目录和服务启动逻辑没有被固化到镜像初始化流程中。
 
+## 知识讲解：通过 Slurm 运行 HPL
+
+!!! tip "前置知识"
+
+    理解任务一中 HPL 的构建结果、任务二中的共享目录，以及任务三中的 Slurm 节点分配和作业提交流程。
+
+!!! tip "学习目标"
+
+    这一部分的学习目标是把前面三个任务串起来：让 Slurm 分配计算节点，让 MPI 在这些节点上启动 HPL，并理解 HPL 参数与 Slurm 资源申请之间的对应关系。
+
+    **这一部分需要体现在报告中，因为它是本 Lab 的最终验收。**
+
+HPL 本身只是一个可执行程序，但在集群中运行它时，真正需要协调的是三层关系：文件从哪里来、资源由谁分配、进程如何启动。NFS 负责让所有节点看到同一个 `xhpl` 和 `HPL.dat`；Slurm 负责决定本次作业拿到哪些节点和多少任务；MPI 负责在这些节点上启动并协调并行进程。
+
+提交 HPL 时，最容易混淆的是 Slurm 的任务数和 HPL 的进程网格。Slurm 脚本里申请的总任务数通常等于“节点数 × 每节点任务数”；而 `HPL.dat` 中的 `P` 和 `Q` 描述的是 MPI 进程网格，必须满足 `P * Q` 等于实际启动的 MPI 进程数。如果这两个数字对不上，HPL 可能直接报错，也可能运行出没有意义的结果。
+
+!!! note "资源申请和程序参数要匹配"
+
+    Slurm 只负责给你资源，不会自动帮你修改 `HPL.dat`。如果你把作业从 2 个进程改成 4 个进程，也要同步检查 HPL 的 `P`、`Q` 等参数。
+
+从实验报告角度看，这一部分最重要的不是性能数值有多高，而是你能说明自己申请了多少资源、实际启动了多少 MPI 进程、HPL 参数如何匹配这些进程，以及最终输出文件中哪些信息证明作业成功完成。
+
 ## 任务四：使用 Slurm 提交 HPL
 
 在完成 HPL 编译、NFS 共享目录和 Slurm 配置后，你需要通过 Slurm 提交 HPL 任务。这个任务是本 Lab 的最终验收：不再手工指定 hostfile 直接运行，而是让 Slurm 分配节点并启动作业。
@@ -1444,23 +1258,9 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
 ??? success "步骤参考和说明"
 
-    下面给出一个脚本示例，请根据你的 HPL 路径和 MPI 安装方式修改：
+    提交 HPL 时，建议准备一个最简单的 `sbatch` 脚本：作业名称设为 `hpl`，分区选 `debug`，节点数设为 3，每个节点启动 1 个任务，输出文件写到 NFS 共享目录中。脚本主体只需要先进入 `xhpl` 所在目录，再启动 HPL 即可。
 
-    ```bash
-    #!/bin/bash
-    #SBATCH --job-name=hpl
-    #SBATCH --partition=debug
-    #SBATCH --nodes=3
-    #SBATCH --ntasks-per-node=1
-    #SBATCH --output=/cluster/shared/hpl-%j.out
-
-    cd /cluster/shared/hpl-2.3/bin/Linux_PII_FBLAS
-    mpirun ./xhpl
-    ```
-
-    注意 `HPL.dat` 中的进程网格参数 `P` 和 `Q` 应满足 `P * Q` 等于作业实际启动的 MPI 进程数。
-
-    如果你的 OpenMPI 构建支持 Slurm/PMIx 集成，也可以尝试用 `srun ./xhpl` 启动 MPI 程序，并比较二者的行为差异。
+    注意 `HPL.dat` 中的进程网格参数 `P` 和 `Q` 应满足 `P * Q` 等于作业实际启动的 MPI 进程数。如果你的 OpenMPI 构建支持 Slurm/PMIx 集成，也可以尝试让 Slurm 直接启动 `xhpl`，并比较它和 `mpirun` 的行为差异。
 
 ??? note "HPL.dat 文件格式说明"
 
@@ -1525,6 +1325,20 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
     [k3s](https://k3s.io/) 是一个轻量级 Kubernetes 发行版。它和 Slurm 都可以管理多节点集群，但目标场景不同：Slurm 更适合 HPC 批处理作业和资源排队，Kubernetes 更适合长期运行的容器化服务和云原生应用。
 
+!!! tip "知识点：容器编排和 Kubernetes"
+
+    Kubernetes 解决的是“如何在一组机器上长期运行、更新和暴露容器化服务”的问题。你可以把它理解成一个面向服务的集群控制平面：用户提交 Deployment、Service 等对象，控制平面负责把 Pod 调度到合适的节点，并在容器异常退出时自动恢复。
+
+    k3s 是 Kubernetes 的轻量发行版，减少了一些组件和默认依赖，更适合教学、小型集群和边缘环境。本 Lab 只要求你搭建一个最小集群，理解 server、agent、Pod、Deployment 和 Service 之间的关系即可。
+
+    - **server**：运行控制平面，保存集群状态并接受 `kubectl` 操作。本 Lab 中通常是 `node01`。
+    - **agent**：加入集群并实际运行工作负载的节点，例如 `node02`。
+    - **Pod**：Kubernetes 调度的最小运行单元，通常包含一个或多个容器。
+    - **Deployment**：描述“希望长期运行多少个 Pod”，并负责滚动更新和故障恢复。
+    - **Service**：为 Pod 提供稳定的访问入口，避免直接依赖 Pod 的临时 IP。
+
+    与 Slurm 相比，k3s 更关注服务的持续运行，而不是批处理作业的排队执行。因此，完成 Bonus 时重点是理解二者目标场景不同，而不是把 k3s 当作 Slurm 的替代品。
+
 !!! warning "当心别被 k3s 撑爆了！"
 
     虽然比完整 k8s 轻量得多，k3s 仍然是一个完整的容器编排系统——运行着 API server、scheduler、controller-manager、containerd 等组件：
@@ -1555,47 +1369,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
     === "虚拟机 / 物理机"
 
-        在 `node01` 安装 k3s server：
-
-        ```bash
-        curl -sfL https://get.k3s.io | sh -
-        sudo kubectl get nodes -o wide
-        ```
-
-        查看用于加入 agent 的 token：
-
-        ```bash
-        sudo cat /var/lib/rancher/k3s/server/node-token
-        ```
-
-        在 `node02` 上安装 k3s agent。请将 `K3S_URL` 和 `K3S_TOKEN` 替换成实际地址和 token：
-
-        ```bash
-        curl -sfL https://get.k3s.io | K3S_URL=https://node01:6443 K3S_TOKEN=token sh -
-        ```
-
-        回到 `node01` 检查：
-
-        ```bash
-        sudo kubectl get nodes -o wide
-        ```
-
-        部署应用：
-
-        ```bash
-        sudo kubectl create deployment hello-nginx --image=nginx
-        sudo kubectl expose deployment hello-nginx --type=NodePort --port=80
-        sudo kubectl get pods -o wide
-        sudo kubectl get service hello-nginx
-        ```
-
-        记录 NodePort 并访问：
-
-        ```bash
-        curl http://node01:NODE_PORT
-        ```
-
-        如果启用了防火墙或云服务器安全组，确认 k3s 所需端口没有被阻断。
+        在 `node01` 上安装 k3s server，并在安装完成后确认集群节点已经正常出现在节点列表中。随后查看用于加入 agent 的 token，把 `node02` 作为 agent 加入集群，再回到 `node01` 重新确认节点状态是否已经变为 Ready。最后创建一个简单的 Deployment，并将它暴露成 NodePort 服务，检查 Pod 和 Service 是否都已经正常出现，再通过 NodePort 访问这个应用。若启用了防火墙或云服务器安全组，还需要确认 k3s 所需端口没有被阻断。
 
     === "Docker"
 
