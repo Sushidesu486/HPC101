@@ -14,7 +14,7 @@
 
 ## 导言：计算机集群
 
-在 Lab 0 中，我们已经获得了 Linux 虚拟机环境，熟悉了 Linux 命令行的基本操作，对 Linux 系统的文件路径、用户权限、环境变量等基本概念有了一定的了解。在接下来的实验中，这些基础知识将会被广泛应用。
+在 Lab 0 中，我们已经获得了 Linux 虚拟机环境，熟悉了 Linux 命令行的基本操作，对 Linux 系统的文件路径、用户权限、环境变量等基本概念有了一定的了解。在接下来的实验中，这些基础知识将会被广泛应用。我们希望你再完成后续实验挑战之后，再回过头来看看我们的lab1,你会对集群环境等知识有更加深刻的了解。
 
 本次实验或许是你第一次接触到计算机集群。所谓计算机集群，就是将多台计算机连接在一起，通过网络协同工作，以完成一些大规模的计算任务。为什么我们需要计算机集群呢？因为单体的制造成本和性能是有限的。制造芯片时，人们想把单个处理器的性能提升到极致，但是遇到了物理限制：一块集成电路上的晶体管数量越多，设计就越复杂，发热就越严重，功耗就越大，性能就越低。因此，人们开始尝试将多个处理器连接在一起，就有了现代多核处理器。制造计算机时，也可以放置多个 CPU（常见的服务器一般都具有两颗），但放置更多只会增加单台计算机的设计和制造难度。与其想着怎么把单体造强，不如想着怎么把多个单体连接在一起，怎么让它们协同工作，这就是并行计算思想的由来。
 
@@ -673,62 +673,6 @@ zlib 是 OpenMPI 的可选依赖，用于改善数据传输性能，可在构建
 
     如果你遇到了无法解决的困难，可以参考下面的解答和说明。如果还是无法解决，请向我们反馈。
 
-!!! tip "如果选择 Docker 路线"
-
-    如果你计划使用 Docker 完成实验，可以把任务一的编译过程写进 `Dockerfile`，这样镜像构建时会自动完成所有编译。将编译步骤容器化有几个需要注意的地方：
-
-    - **构建上下文**：BLAS 和 CBLAS 的源码包 `blas-3.12.0.tgz` 和 `CBLAS.tgz` 位于仓库的 `src/lab1/` 下，需要在 `Dockerfile` 中通过 `COPY` 指令引入，或者构建时指定正确的 `context`。
-    - **网络问题**：OpenMPI 和 HPL 的源码需要从官网下载。如果构建时网络不稳定，可以考虑在宿主机提前下载好，再用 `COPY` 指令带入镜像。也可以给 Docker 配置镜像加速器或代理。
-    - **OpenMPI 的 PATH**：通过 `ENV` 指令设置的 PATH 只在构建过程中生效。容器运行后通过 `su - user` 登录时，`.profile` 不会继承 `ENV` 中的 PATH。需要在 `Dockerfile` 中额外修改 `/home/user/.bashrc` 或 `/etc/profile`，将 `/opt/openmpi/bin` 加入 PATH，否则后面运行 `mpirun` 时会找不到命令。LD_LIBRARY_PATH 同理。
-    - **镜像体积**：编译 OpenMPI、BLAS 和 HPL 会产生较大的镜像。可以在一个 `RUN` 指令中完成下载、编译、清理，利用 Docker 的分层缓存机制控制镜像大小。
-
-    ??? success "参考：Dockerfile 中编译 OpenMPI / BLAS / HPL 的关键步骤"
-
-        下面截取了已有 Dockerfile 中的编译部分，供参考（省略了基础环境和 SSH 配置）：
-
-        ```dockerfile
-        # ---- OpenMPI ----
-        RUN cd /opt/src \
-            && wget -q "https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.3.tar.gz" \
-            && tar xf "openmpi-5.0.3.tar.gz" \
-            && cd "openmpi-5.0.3" \
-            && ./configure --prefix=/opt/openmpi \
-            && make -j"$(nproc)" \
-            && make install \
-            && echo /opt/openmpi/lib >/etc/ld.so.conf.d/openmpi.conf \
-            && ldconfig
-
-        # ---- BLAS ----
-        RUN cd /opt/src \
-            && tar xf blas-3.12.0.tgz \
-            && cd BLAS-3.12.0 \
-            && make -j"$(nproc)"
-
-        # ---- CBLAS ----
-        RUN cd /opt/src \
-            && tar xf CBLAS.tgz \
-            && cd CBLAS \
-            && sed -i 's#^BLLIB = .*#BLLIB = /opt/hpc/BLAS-3.12.0/blas_LINUX.a#' Makefile.in \
-            && make alllib
-
-        # ---- HPL ----
-        RUN cd /opt/src \
-            && wget -q "https://netlib.org/benchmark/hpl/hpl-2.3.tar.gz" \
-            && tar xf "hpl-2.3.tar.gz" \
-            && cd "hpl-2.3" \
-            && cp setup/Make.Linux_PII_FBLAS . \
-            && sed -i 's#^TOPdir.*=.*#TOPdir = /opt/src/hpl-2.3#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^MPdir.*=.*#MPdir = /opt/openmpi#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^MPlib.*=.*#MPlib = $(MPdir)/lib/libmpi.so#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LAdir.*=.*#LAdir = /opt/hpc/BLAS-3.12.0#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LAlib.*=.*#LAlib = $(LAdir)/blas_LINUX.a#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^CC.*=.*#CC = /opt/openmpi/bin/mpicc#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LINKER.*=.*#LINKER = /opt/openmpi/bin/mpifort#' Make.Linux_PII_FBLAS \
-            && make arch=Linux_PII_FBLAS
-        ```
-
-        注意其中的 `sed` 修改项需要根据你的实际源码版本、路径和编译器进行调整。如果使用不同的 OpenMPI 版本或 BLAS 路径，记得同步修改。
-
 !!! tip "如何阅读错误信息并处理错误"
 
     命令行与图形界面的一大不同就是，在命令的运行过程中会给出很多记录（Log）和错误信息（Error Message）。新手可能都有畏难心理，觉得这些信息很难看懂/看了也没有什么用，但很多时候解决方法已经在错误信息中了。举个例子，下面是运行 `make` 时产生的一些信息，你能指出错误是什么吗？
@@ -961,73 +905,6 @@ node04  计算节点
     - OpenMPI 可以通过 `hostfile` 在多个节点上启动进程，并进一步运行 HPL。
 
     仓库的 `build/lab1-docker/` 目录下提供了一个完整的 Docker 参考实现，包含 Dockerfile、Compose 文件和启动脚本。你可以直接使用，也可以参照它自行编写。
-
-    !!! tip "Docker 中配置 NFS — 完全可行"
-
-        Docker 中是可以配置 NFS 的（已验证通过），只要容器以 `privileged: true` 运行。关键步骤如下：
-
-        **在 NFS 服务端（`node01`）：**
-
-        1. 确保 `nfs-kernel-server` 已安装（Dockerfile 中 `apt install nfs-kernel-server`）。
-        2. 启动 rpcbind（通常默认已运行）。
-        3. 挂载 nfsd 内核接口：`mount -t nfsd nfsd /proc/fs/nfsd`。
-        4. 配置 `/etc/exports` 并运行 `exportfs -av`。
-        5. 启动 `nfs-kernel-server`。
-
-        **在 NFS 客户端（`node02~04`）：**
-
-        1. 安装 `nfs-common`。
-        2. 使用 `mount -t nfs -o nolock <server_ip>:/cluster/shared /cluster/shared` 挂载。
-           - `nolock` 参数可以避免 rpc.statd 问题，在 Docker 环境中是必要的。
-
-        ??? warning "NFS 在 Docker 中的注意事项"
-
-            以下是实际操作中可能遇到的问题：
-
-            **`exportfs: /cluster/shared does not support NFS export`**
-
-            这个错误是因为 `/proc/fs/nfsd` 没有挂载。NFS 内核服务器需要通过这个文件系统接口与内核通信。运行 `mount -t nfsd nfsd /proc/fs/nfsd` 后再试 `exportfs` 即可。如果这个目录不存在，说明 Docker 宿主机的内核没有加载 `nfsd` 模块，或容器缺少权限。
-
-            **`rpc.statd is not running but is required for remote locking`**
-
-            在客户端挂载时加上 `-o nolock`，跳过远程锁。Docker 容器的文件锁实现与宿主机共享，使用 NFS 远程锁可能引发冲突。
-
-            **如何让 NFS 随容器自动启动**
-
-            在 `entrypoint.sh`（或 Docker CMD 脚本）中添加：
-
-            ```bash
-            mount -t nfsd nfsd /proc/fs/nfsd 2>/dev/null
-            exportfs -av
-            /etc/init.d/nfs-kernel-server start
-            ```
-
-            注意：容器启动时 NFS 服务的启动顺序——rpcbind 先于 nfs-kernel-server，如果同时启动多个服务，可能需要短暂的 `sleep 2` 等待 rpcbind 就绪。
-
-            **如何验证 NFS 正常工作**
-
-            ```bash
-            # 在 node01 检查
-            exportfs -v
-            rpcinfo -p | grep nfs
-
-            # 在任意客户端检查
-            showmount -e node01
-            mount -t nfs -o nolock node01:/cluster/shared /mnt/test
-            touch /mnt/test/hello-from-node02
-            # 回 node01 检查文件是否存在
-            ls /cluster/shared/hello-from-node02
-            ```
-
-            **容器重建后 NFS 配置丢失**
-
-            `docker compose down && up` 重建容器后，所有手动配置都会丢失。你应当把 NFS 相关的配置（`/etc/exports` 写入、nfsd 挂载、服务启动）固化到 `Dockerfile` 和 `entrypoint.sh` 中。这样每次重建后 NFS 都是立即可用的。
-
-    可参考的文档：
-
-    - [Docker Compose file reference](https://docs.docker.com/compose/compose-file/)
-    - [Docker Compose networking](https://docs.docker.com/compose/how-tos/networking/)
-    - [Open MPI: Launching with SSH](https://docs.open-mpi.org/en/main/launching-apps/ssh.html)
 
     ---
 
@@ -1291,7 +1168,30 @@ node04  计算节点
 
     ---
 
-    **第六步：运行 HPL**
+    **第六步：配置 NFS 共享目录**
+
+    !!! tip "Docker 中配置 NFS — 完全可行"
+
+        Docker 中是可以配置 NFS 的（已验证通过），只要容器以 `privileged: true` 运行。关键步骤如下：
+
+        **在 NFS 服务端（`node01`）：**
+
+        1. 确保 `nfs-kernel-server` 已安装（Dockerfile 中 `apt install nfs-kernel-server`）。
+        2. 启动 rpcbind（通常默认已运行）。
+        3. 挂载 nfsd 内核接口：`mount -t nfsd nfsd /proc/fs/nfsd`。
+        4. 配置 `/etc/exports` 并运行 `exportfs -av`。
+        5. 启动 `nfs-kernel-server`。
+
+        **在 NFS 客户端（`node02~04`）：**
+
+        1. 安装 `nfs-common`。
+        2. 使用 `mount -t nfs -o nolock <server_ip>:/cluster/shared /cluster/shared` 挂载。`nolock` 参数可以避免 rpc.statd 问题。
+
+        **容器重建后 NFS 配置丢失**
+
+        `docker compose down && up` 重建容器后，所有手动配置都会丢失。把 NFS 相关的配置（`/etc/exports` 写入、nfsd 挂载、服务启动）固化到 `Dockerfile` 和 `entrypoint.sh` 中。
+
+    **第七步：运行 HPL**
 
     确认 HPL 的编译产物在共享目录中，然后运行：
 
