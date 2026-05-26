@@ -6,11 +6,20 @@
     文档中实验步骤相关命令仅供参考，不要直接复制粘贴！因为这些都依赖于你当前的机器环境，可能会导致你的系统环境乱套。
     
 
-!!!warning "关于Agent"
-    
+!!! warning "关于Agent"
+
     当前Agent对于系统环境搭建的活已经非常熟悉了，在我们的测试下，他们可以在很短的时间内完成Lab1实验内容.
     当然，我们希望你在实验中充分使用Agent工具，但是不要把Agent当成你的牛马员工，所有事情给他干，你至少需要知道你在做什么。
     在自己的脑海中构建起一个完整的知识架构，远比背下各种奇奇怪怪的命令行要重要。
+
+??? danger "无能的agent使用者"
+
+    <figure markdown="span">
+    ![never fully trust your agent](image/never_fully_trust_your_agent.webp){ width=75% }
+    <figcaption>Summer Yue（Meta）于2025年初在推特上分享：使用 OpenClaw 时被 Agent 删除了工作邮件<br/><small>来源：<a href="https://x.com/summeryue/status/1879615697733542031">@summeryue on X</a></small></figcaption>
+    </figure>
+
+    这个实验从编译到部署的每一个步骤，Agent 都可能帮你完成——也都能帮你搞砸。**永远检查它干了什么。**
 
 ## 导言：计算机集群
 
@@ -40,7 +49,7 @@
     - NFS 配置：准备多节点环境，搭建 NFS 服务器和客户端，使所有节点能够访问同一个共享目录，并给出读写验证结果。
     - Slurm 配置：搭建一个可用的 Slurm 集群，至少包含一个控制节点和一个计算节点，验证 `sinfo`、`srun`、`sbatch` 的结果。
     - HPL 作业提交：通过 Slurm 提交 HPL 任务，记录 Slurm 作业脚本、HPL 输出和性能结果。
-    - Bonus：如果完成 k3s，请记录节点加入、Pod/Deployment 运行和服务访问的验证结果。
+    - Bonus：如果完成 k3s，请记录节点加入、Pod/Deployment 运行和服务访问的验证结果,或者其他任何你自由探索的结果。
 2. HPL 输出结果文本文件
 3. Slurm 作业脚本和对应的输出文件。
 4. 如果修改了代码，请提交修改后的代码和一份修改说明。
@@ -869,11 +878,6 @@ zlib 是 OpenMPI 的可选依赖，用于改善数据传输性能，可在构建
 
 我们希望搭建的是一种非常经典的小型 HPC 集群架构：一个控制节点和三个计算节点。控制节点负责提供统一入口和基础服务，计算节点负责执行实际计算任务。这样的设计常见于教学集群和中小型 HPC 环境，因为它把管理面和计算面分开，便于扩展、排错和权限控制。
 
-<figure markdown="span">
-![cluster architecture placeholder](image/lab1-cluster-architecture-placeholder.svg){ width=70% }
-<figcaption>四节点小集群架构示意图占位</figcaption>
-</figure>
-
 本 Lab 推荐使用四个节点，命名如下：
 
 ```text
@@ -1495,8 +1499,6 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
       请记录你尝试过的优化方法及其效果，分析性能提升的原因。性能的绝对值不作为评判依据，重要的是你通过哪些方法提高了性能，以及你对这些优化方法的理解。
 
-<!-- TODO: slurm_hpl.webp - 见上方 Task 3 末尾的 sinfo/squeue/HPL 综合截图 -->
-
 ## Bonus 任务
 
 !!! warning "Bonus 任务是什么?"
@@ -1513,87 +1515,107 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
     [k3s](https://k3s.io/) 是一个轻量级 Kubernetes 发行版。它和 Slurm 都可以管理多节点集群，但目标场景不同：Slurm 更适合 HPC 批处理作业和资源排队，Kubernetes 更适合长期运行的容器化服务和云原生应用。
 
-    可参考的文档：
+!!! warning "当心别被 k3s 撑爆了！"
 
-    - [k3s Quick Start](https://docs.k3s.io/quick-start)
-    - [k3s Installation Requirements](https://docs.k3s.io/installation/requirements)
-    - [Kubernetes: Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
-    - [Kubernetes: Services](https://kubernetes.io/docs/concepts/services-networking/service/)
+    虽然比完整 k8s 轻量得多，k3s 仍然是一个完整的容器编排系统——运行着 API server、scheduler、controller-manager、containerd 等组件：
 
-    本 Bonus 要求你搭建一个最小 k3s 集群，并在报告中给出基本的验证结果。具体可参考下面的折叠框。
+    - **k3s server**（`node01`）：空闲状态约占用 600 MB - 1 GB 内存，再加上 Lab1 必做任务的服务（NFS、Slurm），2 GB 内存的节点会非常吃力。
+    - **k3s agent**（`node02`）：约 300 - 500 MB。
 
-    ??? success "步骤参考和说明"
+    建议给 k3s 单独一个节点或把 node01 加到 4 GB；部署前先用 `free -h` 确认余量；deploy 后记得清理无用镜像。
 
-        === "虚拟机 / 物理机"
+可参考的文档：
 
-            在 `node01` 安装 k3s server：
+- [k3s Quick Start](https://docs.k3s.io/quick-start)
+- [k3s Installation Requirements](https://docs.k3s.io/installation/requirements)
+- [Kubernetes: Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
+- [Kubernetes: Services](https://kubernetes.io/docs/concepts/services-networking/service/)
 
-            ```bash
-            curl -sfL https://get.k3s.io | sh -
-            sudo kubectl get nodes -o wide
-            ```
+**基础要求**
 
-            查看用于加入 agent 的 token：
+搭建一个最小 k3s 集群并验证：
 
-            ```bash
-            sudo cat /var/lib/rancher/k3s/server/node-token
-            ```
+1. 在 `node01` 安装 k3s server。
+2. 至少将一个其他节点加入为 k3s agent。
+3. `kubectl get nodes -o wide` 能看到 Ready 状态的节点。
+4. 创建一个 Deployment（例如 `nginx`），`kubectl get pods -o wide` 能看到 Pod 被调度到节点上。
+5. 通过 Service、端口转发或 NodePort 访问该应用。
 
-            在 `node02` 上安装 k3s agent。请将 `K3S_URL` 和 `K3S_TOKEN` 替换成你的实际地址和 token：
+??? success "步骤参考"
 
-            ```bash
-            curl -sfL https://get.k3s.io | K3S_URL=https://node01:6443 K3S_TOKEN=token sh -
-            ```
+    === "虚拟机 / 物理机"
 
-            回到 `node01` 检查节点：
+        在 `node01` 安装 k3s server：
 
-            ```bash
-            sudo kubectl get nodes -o wide
-            ```
+        ```bash
+        curl -sfL https://get.k3s.io | sh -
+        sudo kubectl get nodes -o wide
+        ```
 
-            部署一个简单应用：
+        查看用于加入 agent 的 token：
 
-            ```bash
-            sudo kubectl create deployment hello-nginx --image=nginx
-            sudo kubectl expose deployment hello-nginx --type=NodePort --port=80
-            sudo kubectl get pods -o wide
-            sudo kubectl get service hello-nginx
-            ```
+        ```bash
+        sudo cat /var/lib/rancher/k3s/server/node-token
+        ```
 
-            记录 Service 的 NodePort，并尝试访问：
+        在 `node02` 上安装 k3s agent。请将 `K3S_URL` 和 `K3S_TOKEN` 替换成实际地址和 token：
 
-            ```bash
-            curl http://node01:NODE_PORT
-            ```
+        ```bash
+        curl -sfL https://get.k3s.io | K3S_URL=https://node01:6443 K3S_TOKEN=token sh -
+        ```
 
-            如果你的虚拟机或云服务器启用了防火墙，请确认 k3s 所需端口没有被阻断。
+        回到 `node01` 检查：
 
-        === "Docker"
+        ```bash
+        sudo kubectl get nodes -o wide
+        ```
 
-            如果你本来就是按 Docker 路线完成 Lab1，那么可以直接在现有的四节点容器环境上继续搭建 k3s，而不需要再单独新建一套 k3s 容器。可以按下面的思路组织：
+        部署应用：
 
-            - 先确认四个基础容器都已经正常运行，并且容器配置允许在内部继续启动系统级组件。
-            - 在 `node01` 上准备 k3s server，在其余节点上准备 k3s agent，使 `node01`、`node02`、`node03`、`node04` 都能加入同一个集群。
-            - 完成安装后，至少要验证节点状态正常、Pod 能被成功调度，以及一个简单服务能够被访问。
-            - 如果你已经为 Docker 路线准备了自动化脚本，也可以让脚本去完成二进制下载、server/agent 启动和基础验证，但报告中仍应写清楚背后的步骤和依赖关系。
+        ```bash
+        sudo kubectl create deployment hello-nginx --image=nginx
+        sudo kubectl expose deployment hello-nginx --type=NodePort --port=80
+        sudo kubectl get pods -o wide
+        sudo kubectl get service hello-nginx
+        ```
 
-            ??? tip "Docker 下 k3s 常见问题"
+        记录 NodePort 并访问：
 
-                - **Pod 一直卡在 `ContainerCreating`**：优先检查容器是否具备运行 k3s 所需的特权能力，以及 cgroup 配置是否满足要求。
-                - **节点能注册但工作负载起不来**：通常说明控制平面起来了，但容器运行时或 cgroup 层面仍有限制，应先确认系统 Pod 是否正常。
-                - **镜像可以下载但节点迟迟不 Ready**：检查 server 与 agent 的地址、token、主机名解析，以及容器网络是否允许节点间正常通信。
-                - **服务访问异常**：先区分是 Pod 没起来、Service 没选中 Pod，还是访问路径本身受 Docker 网络限制；不要一上来就把问题归到 Kubernetes 本身。
-                - **重建容器后一切丢失**：如果没有把初始化逻辑固化到自己的脚本中，k3s 二进制、启动参数和验证流程都需要重新做一遍。
+        ```bash
+        curl http://node01:NODE_PORT
+        ```
 
-!!! tip "k3s 进阶 Bonus"
+        如果启用了防火墙或云服务器安全组，确认 k3s 所需端口没有被阻断。
 
-    - 将 `node02`、`node03`、`node04` 都加入 k3s 集群，并观察 Pod 如何分布在不同节点上。
-    - 给节点添加 label，使用 `nodeSelector` 控制 Pod 调度位置。
-    - 部署一个包含 Deployment、Service、ConfigMap 的小应用，并说明每个 Kubernetes 对象的作用。
-    - 使用 Helm 安装一个简单应用，例如 metrics-server 或 Prometheus，并记录安装和验证过程。
-    - **(\*)** 配置 Ingress、LoadBalancer 或 MetalLB，使集群内服务能以更接近生产环境的方式暴露。
-    - **(\*)** 将一个 MPI 或批处理式任务容器化，并尝试用 Kubernetes Job 运行，再和 Slurm 作业模型进行比较。
-    - **(\*)** 对比 Slurm 和 k3s：分别说明它们适合运行什么任务，不适合运行什么任务，以及为什么 HPC 集群一般仍然使用 Slurm 管理批处理作业。
+    === "Docker"
+
+        如果你是按 Docker 路线完成 Lab1，可以直接在现有的四节点容器环境上加装 k3s。仓库 `build/lab1-docker/` 提供了 `k3s-setup.sh` 一键脚本，也可参照它自行编写。
+
+        需要注意：
+
+        - 容器必须同时使用 `privileged: true` 和 `cgroup: host`。
+        - 容器内 overlayfs 不可用，启动 k3s 时必须加 `--snapshotter native`，否则会报 `failed to mount overlay: invalid argument`。
+        - **k3s 版本与 cgroup**：容器内 k3s 能否启动与宿主机的 cgroup 版本有关。cgroup v1 和 v2 对各个版本 k3s 的支持情况不同，请查阅 [k3s Advanced Options](https://docs.k3s.io/advanced#additional-preparation-for-alpine-linux-setup) 和 [k3s Known Issues](https://docs.k3s.io/known-issues)。
+
+**进阶挑战（选做）**
+
+以下任务任选感兴趣的完成。加 `*` 的仅作为超算队选拔依据，不参与课程评价。
+
+- 将 `node02`、`node03`、`node04` 都加入 k3s 集群，观察 Pod 分布。
+- 给节点添加 label，使用 `nodeSelector` 控制 Pod 调度位置。
+- 部署包含 Deployment、Service、ConfigMap 的小应用，说明每个 Kubernetes 对象的作用。
+- 使用 Helm 安装一个简单应用（例如 metrics-server 或 Prometheus）。
+- **(\*)** 配置 Ingress、LoadBalancer 或 MetalLB，使服务以更接近生产的方式暴露。
+- **(\*)** 将一个 MPI 或批处理任务容器化，用 Kubernetes Job 运行，并与 Slurm 作业模型比较。
+- **(\*)** 对比 Slurm 和 k3s：分别说明它们适合什么类型的任务，以及为什么 HPC 集群一般仍用 Slurm。
+
+??? tip "Docker 路线常见问题"
+
+    - **Pod 一直卡在 `ContainerCreating`**：优先检查容器是否具备 k3s 所需特权能力，以及 cgroup 配置。
+    - **节点能注册但工作负载起不来**：控制平面起来了，但容器运行时或 cgroup 层面有限制，先确认系统 Pod 是否正常。
+    - **镜像可以下载但节点迟迟不 Ready**：检查 server 与 agent 的地址、token、主机名解析，以及容器网络是否允许节点间正常通信。
+    - **服务访问异常**：先区分是 Pod 没起来、Service 没选中 Pod，还是访问路径受 Docker 网络限制。
+    - **重建容器后一切丢失**：如果没有把初始化逻辑固化到脚本中，k3s 二进制、启动参数和验证流程需要重做。
 
 ## 技术杂谈
 
