@@ -446,7 +446,56 @@ MPI 指的是 [Message Passing Interface](http://www.mpi-forum.org/)，是程序
 
 在本 Lab 中，`node01` 将作为 NFS 服务器，导出 `/cluster/shared`；`node02`、`node03`、`node04` 将作为 NFS 客户端，把同一个远程目录挂载到本地的 `/cluster/shared`。这样你只需要把 HPL 可执行文件、`HPL.dat` 和 Slurm 作业脚本放到这个共享目录中，所有节点都能看到同一份内容。
 
-NFS 对初学者最容易出问题的是权限。Linux 文件权限最终依赖数字 UID/GID，而不是只看用户名字符串。如果 `node01` 上的 `user` 是 UID 1000，但 `node02` 上的 `user` 是 UID 1001，那么 NFS 客户端看到的文件属主就可能和你预期不一致。（任务二中有一个专门的框框讲 UID/GID，可以跳过去看看。）因此，搭建 NFS 前应确保实验用户在所有节点上的用户名、UID、GID 一致。
+NFS 对初学者最容易出问题的是权限。原因在于 Linux 文件权限最终依赖数字 UID/GID ——下面的框框会详细解释。
+
+!!! note "UID / GID 是什么？为什么对 NFS 很重要"
+
+    Linux 中每个用户和用户组在系统内部都用一个**数字**来标记，而不是用户名这个字符串：
+
+    - **UID**（User ID）：标识一个用户。例如 `user` 的 UID 通常是 `1000`。
+    - **GID**（Group ID）：标识一个用户组。例如 `user` 所在的 `user` 组的 GID 通常也是 `1000`。
+
+    可以用 `id` 命令查看当前用户的 UID 和 GID：
+
+    ```bash
+    id
+    # uid=1000(user) gid=1000(user) groups=1000(user),4(adm),27(sudo)
+    ```
+
+    问题出在 NFS 只认数字，不认名字。假设：
+
+    | | node01 | node02 |
+    |---|---|---|
+    | 用户名 | `student` | `student` |
+    | UID | 1000 | 1001 |
+
+    那么在 node01 上用 `student` 创建的文件，到了 node02 上 NFS 看到的属主是 UID 1000——但 node02 上 UID 1000 可能是另一个用户，或者根本不存在。结果就是你明明在 node02 上也是 `student`，却打不开「自己」的文件。
+
+    所以实验开始前，务必让所有节点上你的用户名、UID、GID 完全一致：
+
+    ```bash
+    # 在每个节点上执行，对比输出是否相同
+    id
+    ```
+
+    如果不一致，可以重新创建用户或修改 UID/GID。修改方式如下：
+
+    ```bash
+    # 查看当前 UID/GID
+    id
+
+    # 修改用户 UID（以用户名 student、新 UID 1000 为例）
+    sudo usermod -u 1000 student
+    # 修改用户 GID（以组名 student、新 GID 1000 为例）
+    sudo groupmod -g 1000 student
+    # 修正该用户家目录下的文件属主
+    sudo chown -R student:student /home/student
+    ```
+
+    !!! warning "修改 UID/GID 前请仔细核对"
+        不要修改正在使用的账户的 UID/GID，建议先创建一个临时 `root` 会话（`sudo -i`）再操作。如果改错了可能导致无法登录。
+
+    更多参考：`man usermod`、`man groupmod`
 
 实际维护集群时，还需要继续关注一些 NFS 配置细节：`/etc/exports` 中的导出范围不应过大，避免把共享目录暴露给不可信网段；`root_squash`、只读导出、客户端网段限制等选项会影响安全性和可维护性；`/etc/fstab` 可以实现开机自动挂载，但网络未就绪时可能导致挂载失败，必要时可以了解 autofs。NFS 适合入门和中小规模共享目录；更大规模集群可能会使用 Lustre、CephFS 等文件系统。
 
@@ -1096,54 +1145,15 @@ node04  计算节点
             - **容器重建后 NFS 失效**：`/etc/exports`、`nfsd` 挂载和服务状态不会保留，应该把这些初始化逻辑固化到你自己的镜像或启动脚本中。
             - **文件属主显示异常**：优先检查所有节点上的普通用户 UID/GID 是否一致；NFS 只认数字，不认用户名。
 
-!!! note "UID / GID 是什么？为什么对 NFS 很重要"
+!!! tip "关于 UID / GID"
 
-    Linux 中每个用户和用户组在系统内部都用一个**数字**来标记，而不是用户名这个字符串：
-
-    - **UID**（User ID）：标识一个用户。例如 `user` 的 UID 通常是 `1000`。
-    - **GID**（Group ID）：标识一个用户组。例如 `user` 所在的 `user` 组的 GID 通常也是 `1000`。
-
-    可以用 `id` 命令查看当前用户的 UID 和 GID：
+    UID/GID 的概念和修改方法已经在知识讲解的「NFS：集群如何共享文件」部分详细介绍过了。在这里你只需要确保所有节点上你的 UID/GID 一致：
 
     ```bash
-    id
-    # uid=1000(user) gid=1000(user) groups=1000(user),4(adm),27(sudo)
+    id  # 在每个节点上执行，对比输出是否相同
     ```
 
-    问题出在 NFS 只认数字，不认名字。假设：
-
-    | | node01 | node02 |
-    |---|---|---|
-    | 用户名 | `student` | `student` |
-    | UID | 1000 | 1001 |
-
-    那么在 node01 上用 `student` 创建的文件，到了 node02 上 NFS 看到的属主是 UID 1000——但 node02 上 UID 1000 可能是另一个用户，或者根本不存在。结果就是你明明在 node02 上也是 `student`，却打不开「自己」的文件。
-
-    所以实验开始前，务必让所有节点上你的用户名、UID、GID 完全一致：
-
-    ```bash
-    # 在每个节点上执行，对比输出是否相同
-    id
-    ```
-
-    如果不一致，可以重新创建用户或修改 UID/GID。修改方式如下：
-
-    ```bash
-    # 查看当前 UID/GID
-    id
-
-    # 修改用户 UID（以用户名 student、新 UID 1000 为例）
-    sudo usermod -u 1000 student
-    # 修改用户 GID（以组名 student、新 GID 1000 为例）
-    sudo groupmod -g 1000 student
-    # 修正该用户家目录下的文件属主
-    sudo chown -R student:student /home/student
-    ```
-
-    !!! warning "修改 UID/GID 前请仔细核对"
-        不要修改正在使用的账户的 UID/GID，建议先创建一个临时 `root` 会话（`sudo -i`）再操作。如果改错了可能导致无法登录。
-
-    更多参考：`man usermod`、`man groupmod`
+    不一致的话回到知识讲解查看修改方法。
 
 ## 任务三：配置 Slurm 作业调度系统
 
