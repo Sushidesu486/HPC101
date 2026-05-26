@@ -5,6 +5,9 @@ venv/
 .venv/
 site-slides/
 build/
+agent.md
+.crossnote/
+zensical-*.log
 
 # python
 __pycache__/
