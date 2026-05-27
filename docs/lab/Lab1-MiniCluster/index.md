@@ -1010,27 +1010,27 @@ node04  计算节点
 
 先在 `node01` 上准备 NFS 服务端，把 `/cluster/shared` 创建出来并导出给实验网段；再在 `node02`、`node03`、`node04` 上准备 NFS 客户端，把同一个共享目录挂载到本地。验证时要真的从某个节点写入测试文件，再到其他节点检查能否读到同一份内容。后续的 HPL 可执行文件、`HPL.dat`、Slurm 作业脚本和实验输出都建议统一放到这个共享目录中。
 
-    ??? success "步骤参考和说明"
+??? success "步骤参考和说明"
 
-        在 `node01` 上先完成 NFS 服务端准备：安装相关组件、创建共享目录、配置导出规则并启动服务。然后在 `node02`、`node03`、`node04` 上完成客户端准备，把 `node01` 导出的共享目录挂载到本地。        确认是否成功时，不要只看服务状态，而是实际从不同节点写入和读取同一个测试文件，确认共享目录确实对所有节点可见。
+    在 `node01` 上先完成 NFS 服务端准备：安装相关组件、创建共享目录、配置导出规则并启动服务。然后在 `node02`、`node03`、`node04` 上完成客户端准备，把 `node01` 导出的共享目录挂载到本地。        确认是否成功时，不要只看服务状态，而是实际从不同节点写入和读取同一个测试文件，确认共享目录确实对所有节点可见。
 
-        **node02 侧**（挂载 NFS + 创建文件）：
+    **node02 侧**（挂载 NFS + 创建文件）：
 
-        ![NFS 客户端验证](image/nfs_verify_1.webp)
+    ![NFS 客户端验证](image/nfs_verify_1.webp)
 
-        **node01 侧**（检查 NFS 服务 + 验证文件可见）：
+    **node01 侧**（检查 NFS 服务 + 验证文件可见）：
 
-        ![NFS 服务端验证](image/nfs_verify_2.webp)
+    ![NFS 服务端验证](image/nfs_verify_2.webp)
 
-        如果你希望开机自动挂载，可以把这条挂载关系写入客户端的自动挂载配置，这样节点重启后也会自动恢复共享目录。
+    如果你希望开机自动挂载，可以把这条挂载关系写入客户端的自动挂载配置，这样节点重启后也会自动恢复共享目录。
 
-        ??? tip "Docker 下 NFS 常见问题"
+    ??? tip "Docker 下 NFS 常见问题"
 
-            - **`exportfs: /cluster/shared does not support NFS export`**：`/cluster/shared` 如果位于容器默认的 overlay 文件系统上，即使已经挂载 nfsd 接口，也可能不能被 NFS kernel server 导出。
-            - **NFS 服务端没有真正注册**：只写 `/etc/exports` 或只运行 `exportfs` 不一定代表 NFS 已经可用。需要确认 rpcbind、nfsd、mountd 都已经在 `rpcinfo` 中出现。
-            - **客户端挂载点不存在**：如果客户端报 `mount point /cluster/shared does not exist`，说明容器里还没有创建本地挂载目录，或者你复用了旧镜像 / 旧容器，入口脚本没有按当前版本执行。先确认容器内目录存在，再排查 NFS 本身。
-            - **`rpc.statd is not running but is required for remote locking`**：容器环境下最常见的处理方式是在客户端挂载时关闭远程锁；本 Lab 只需要验证共享目录读写，不依赖 NFS 锁服务。
-            - **挂载时报 `access denied`**：检查 `/etc/exports` 里的网段是否覆盖 Docker 网络，例如 Compose 网络分配到的 `172.28.0.0/24`。如果重建过网络，网段可能已经变化。
+        - **`exportfs: /cluster/shared does not support NFS export`**：`/cluster/shared` 如果位于容器默认的 overlay 文件系统上，即使已经挂载 nfsd 接口，也可能不能被 NFS kernel server 导出。
+        - **NFS 服务端没有真正注册**：只写 `/etc/exports` 或只运行 `exportfs` 不一定代表 NFS 已经可用。需要确认 rpcbind、nfsd、mountd 都已经在 `rpcinfo` 中出现。
+        - **客户端挂载点不存在**：如果客户端报 `mount point /cluster/shared does not exist`，说明容器里还没有创建本地挂载目录，或者你复用了旧镜像 / 旧容器，入口脚本没有按当前版本执行。先确认容器内目录存在，再排查 NFS 本身。
+        - **`rpc.statd is not running but is required for remote locking`**：容器环境下最常见的处理方式是在客户端挂载时关闭远程锁；本 Lab 只需要验证共享目录读写，不依赖 NFS 锁服务。
+        - **挂载时报 `access denied`**：检查 `/etc/exports` 里的网段是否覆盖 Docker 网络，例如 Compose 网络分配到的 `172.28.0.0/24`。如果重建过网络，网段可能已经变化。
 
 ## 任务三：配置 Slurm 作业调度系统
 
