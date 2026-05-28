@@ -775,53 +775,7 @@ zlib 是 OpenMPI 的可选依赖，用于改善数据传输性能，可在构建
     - **OpenMPI 的 PATH**：通过 `ENV` 指令设置的 PATH 只在构建过程中生效。容器运行后通过 `su - user` 登录时，`.profile` 不会继承 `ENV` 中的 PATH。需要在 `Dockerfile` 中额外修改 `/home/user/.bashrc` 或 `/etc/profile`，将 `/opt/openmpi/bin` 加入 PATH，否则后面运行 `mpirun` 时会找不到命令。LD_LIBRARY_PATH 同理。
     - **镜像体积**：编译 OpenMPI、BLAS 和 HPL 会产生较大的镜像。可以在一个 `RUN` 指令中完成下载、编译、清理，利用 Docker 的分层缓存机制控制镜像大小。
 
-    ??? success "参考：Dockerfile 中编译 OpenMPI / BLAS / HPL 的关键步骤"
-
-        下面截取了已有 Dockerfile 中的编译部分，供参考（省略了基础环境和 SSH 配置）：
-
-        ```dockerfile
-        # ---- OpenMPI ----
-        RUN cd /opt/src \
-            && wget -q "https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.3.tar.gz" \
-            && tar xf "openmpi-5.0.3.tar.gz" \
-            && cd "openmpi-5.0.3" \
-            && ./configure --prefix=/opt/openmpi \
-            && make -j"$(nproc)" \
-            && make install \
-            && echo /opt/openmpi/lib >/etc/ld.so.conf.d/openmpi.conf \
-            && ldconfig
-
-        # ---- BLAS ----
-        RUN cd /opt/src \
-            && tar xf blas-3.12.0.tgz \
-            && cd BLAS-3.12.0 \
-            && make -j"$(nproc)"
-
-        # ---- CBLAS ----
-        RUN cd /opt/src \
-            && tar xf CBLAS.tgz \
-            && cd CBLAS \
-            && sed -i 's#^BLLIB = .*#BLLIB = /opt/hpc/BLAS-3.12.0/blas_LINUX.a#' Makefile.in \
-            && make alllib
-
-        # ---- HPL ----
-        RUN cd /opt/src \
-            && wget -q "https://netlib.org/benchmark/hpl/hpl-2.3.tar.gz" \
-            && tar xf "hpl-2.3.tar.gz" \
-            && cd "hpl-2.3" \
-            && cp setup/Make.Linux_PII_FBLAS . \
-            && sed -i 's#^TOPdir.*=.*#TOPdir = /opt/src/hpl-2.3#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^MPdir.*=.*#MPdir = /opt/openmpi#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^MPlib.*=.*#MPlib = $(MPdir)/lib/libmpi.so#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LAdir.*=.*#LAdir = /opt/hpc/BLAS-3.12.0#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LAlib.*=.*#LAlib = $(LAdir)/blas_LINUX.a#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^CC.*=.*#CC = /opt/openmpi/bin/mpicc#' Make.Linux_PII_FBLAS \
-            && sed -i 's#^LINKER.*=.*#LINKER = /opt/openmpi/bin/mpifort#' Make.Linux_PII_FBLAS \
-            && make arch=Linux_PII_FBLAS
-        ```
-
-        注意其中的 `sed` 修改项需要根据你的实际源码版本、路径和编译器进行调整。如果使用不同的 OpenMPI 版本或 BLAS 路径，记得同步修改。
-
+    
 !!! tip "如何阅读错误信息并处理错误"
 
     命令行与图形界面的一大不同就是，在命令的运行过程中会给出很多记录（Log）和错误信息（Error Message）。新手可能都有畏难心理，觉得这些信息很难看懂/看了也没有什么用，但很多时候解决方法已经在错误信息中了。举个例子，下面是运行 `make` 时产生的一些信息，你能指出错误是什么吗？
@@ -862,7 +816,7 @@ zlib 是 OpenMPI 的可选依赖，用于改善数据传输性能，可在构建
     2. 去错误现场，看看发生了什么。
     3. 根据提示和查阅得到的资料修复错误。
 
-??? success "步骤参考及说明"
+??? success "请在报告中体现"
 
     **请务必在阅读本部分之前，先参考知识讲解，尝试自己构建 OpenMPI, BLAS 和 HPL。**
 
@@ -1035,7 +989,7 @@ node04  计算节点
 
 先在 `node01` 上准备 NFS 服务端，把 `/cluster/shared` 创建出来并导出给实验网段；再在 `node02`、`node03`、`node04` 上准备 NFS 客户端，把同一个共享目录挂载到本地。验证时要真的从某个节点写入测试文件，再到其他节点检查能否读到同一份内容。后续的 HPL 可执行文件、`HPL.dat`、Slurm 作业脚本和实验输出都建议统一放到这个共享目录中。
 
-??? success "步骤参考和说明"
+??? success "请在报告中体现"
 
     在 `node01` 上先完成 NFS 服务端准备：安装相关组件、创建共享目录、配置导出规则并启动服务。然后在 `node02`、`node03`、`node04` 上完成客户端准备，把 `node01` 导出的共享目录挂载到本地。        确认是否成功时，不要只看服务状态，而是实际从不同节点写入和读取同一个测试文件，确认共享目录确实对所有节点可见。
 
@@ -1078,7 +1032,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 
 先在所有节点安装 Slurm 和 MUNGE，再保证所有节点使用同一份 MUNGE key，并准备好完全一致的 `slurm.conf`。接着让 `node01` 运行控制端服务、计算节点运行工作端服务，最后通过 `sinfo`、`srun` 和 `sbatch` 这些验证动作确认调度系统已经真正可用，且作业输出能够写入 NFS 共享目录。
 
-??? success "步骤参考和说明"
+??? success "请在报告中体现"
 
     === "虚拟机 / 物理机"
 
@@ -1185,7 +1139,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 - 提交 HPL 输出文件，并记录最终性能结果。
 - 说明 `HPL.dat` 中的进程网格参数 `P`、`Q` 和 Slurm 任务数之间的关系。
 
-??? success "步骤参考和说明"
+??? success "请在报告中体现"
 
     提交 HPL 时，建议准备一个最简单的 `sbatch` 脚本：作业名称设为 `hpl`，分区选 `debug`，节点数设为 3，每个节点启动 1 个任务，输出文件写到 NFS 共享目录中。脚本主体只需要先进入 `xhpl` 所在目录，再启动 HPL 即可。
 
@@ -1298,7 +1252,7 @@ Slurm 是高性能计算集群中常见的作业调度系统。前面的 MPI 例
 4. 创建一个 Deployment，`kubectl get pods -o wide` 能看到 Pod 被调度到节点上。
 5. 通过 Service、端口转发或 NodePort 访问该应用。
 
-??? success "步骤参考"
+??? success "请在报告中体现"
 
     === "虚拟机 / 物理机"
 
